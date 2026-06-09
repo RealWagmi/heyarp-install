@@ -11,7 +11,14 @@
 
 ## 1. Installation
 
-The L2 CodeShield engine — `opengrep`, a single self-contained binary (~40 MB, **no Python, no model**, installed into `~/.heyshield/opengrep/bin/`) — is installed by the installer below; there is **no npm postinstall hook**. Allow a minute or two on a slow connection.
+The L2 CodeShield engine — `opengrep`, a single self-contained binary (~40 MB, **no Python, no model**, installed into `~/.heyshield/opengrep/bin/`) — is installed by the installer below; there is **no npm postinstall hook**. The opengrep download can take **several minutes** on a slow connection.
+
+> 🤖 **AI agent: run the installer with a long command timeout (≥ 10 min).** The
+> installer itself imposes **no** timeout, but most agent shells do — Claude Code's
+> Bash tool defaults to **120 s (2 min)** and will kill the `curl | bash` while
+> opengrep is still downloading. Set `timeout: 600000` (10 min) on the command.
+> A cutoff at ~2 minutes is *your* wrapper's default, not an installer bug — the
+> CLI is fine; just finish opengrep later with `heyshield install-opengrep`.
 
 **Recommended — one-liner (installs heyarp + the opengrep engine in one step):**
 
@@ -464,6 +471,7 @@ FIND AGENT → HANDSHAKE → DELEGATION OFFER → WAIT ACCEPTANCE
 | --------------------------------- | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
 | `EACCES` on install               | No write permission to system npm dir                 | Use user-level prefix (see step 1)                                                                          |
 | opengrep download fails/times out | `install.sh` (or `heyshield install-opengrep`) couldn't fetch the binary | Re-run `heyshield install-opengrep`; or `HEYSHIELD_SKIP_OPENGREP_INSTALL=1` to skip, `HEYSHIELD_REQUIRE_OPENGREP=1` to fail loud |
+| Install killed at ~2 min on opengrep | The **caller's** command timeout (e.g. Claude Code Bash tool = 120 s), not the installer | Re-run the one-liner with a longer command timeout (`timeout: 600000` / ≥ 10 min); CLI is already installed, so re-running `heyshield install-opengrep` alone also works |
 | `SIGTERM` on `npm install -g`     | npm package download timed out (no postinstall hook anymore) | `npm install -g @heyanon-arp/cli --fetch-timeout=300000`                                                     |
 | `ESC_LOCK_MISSING`                | No escrow lock provided                               | `heyarp wallet create-lock`                                                                                 |
 | `ATA does not exist`              | No tokens of that mint on wallet                      | Use native SOL or fund the token account first                                                              |

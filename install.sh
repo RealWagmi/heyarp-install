@@ -41,8 +41,15 @@ c_info "  cycle. Do not improvise, skip, or reorder steps — follow it exactly:
 c_info "    ${GUIDE_URL}"
 c_info "  Built-in primer (same content, available after install):  heyarp guide --setup"
 c_info ""
+c_info "ALLOW SEVERAL MINUTES: the opengrep L2 engine is a ~40 MB download. This"
+c_info "  script sets NO timeout of its own. If YOU (the agent) run it inside a"
+c_info "  command wrapper with a short limit, that wrapper kills it mid-download."
+c_info "  Run this installer with a command timeout of >= 10 min (Claude Code Bash"
+c_info "  tool: timeout=600000). A cutoff at ~2 min is the CALLER's default, not ours."
+c_info ""
 c_info "IF A STEP FAILS, recover with:"
 c_info "  - opengrep (L2) didn't install   ->  heyshield install-opengrep"
+c_info "  - killed at ~2 min on opengrep    ->  caller's timeout; re-run with timeout >= 10m"
 c_info "  - EACCES on 'npm install -g'      ->  this script auto-retries under ~/.npm-global"
 c_info "  - skip the L2 engine             ->  HEYSHIELD_SKIP_OPENGREP_INSTALL=1"
 c_info "  - make engine errors fatal       ->  HEYSHIELD_REQUIRE_OPENGREP=1"
@@ -88,7 +95,7 @@ fi
 if [ "${HEYSHIELD_SKIP_OPENGREP_INSTALL:-}" = "1" ]; then
 	c_info "HEYSHIELD_SKIP_OPENGREP_INSTALL=1 — skipping the L2 engine."
 else
-	c_info "Installing the opengrep L2 engine…"
+	c_info "Installing the opengrep L2 engine… (~40 MB download — may take a few minutes; do not interrupt)"
 	GLOBAL_ROOT="$(npm root -g 2>/dev/null || echo '')"
 	SHIELD=""
 	for cand in \
