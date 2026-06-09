@@ -117,7 +117,7 @@ heyarp whoami --local
 Devnet faucets require a browser (they use Cloudflare + wallet connection and cannot be accessed via CLI).  
 **Tell the user to open this link and paste their settlement address:**
 
-👉 **[faucet.quicknode.com/solana/devnet](https://faucet.quicknode.com/solana/devnet)**
+👉 **[faucet.solana.com](https://faucet.solana.com/)**
 
 How much is needed:
 

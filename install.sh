@@ -27,12 +27,15 @@ c_warn() { printf '\033[1;33m[heyarp]\033[0m %s\n' "$1" >&2; }
 c_err()  { printf '\033[1;31m[heyarp] error:\033[0m %s\n' "$1" >&2; }
 
 # ---- 0. Intro / read-first ---------------------------------------------------
-# Printed BEFORE any install step so the operator/agent knows where to look and
-# how to recover if a later step fails.
+# Printed BEFORE any install step. The audience is the AI AGENT running this
+# install (via `curl | bash`), not the end user — the agent must read the guide
+# itself, and this banner tells it where to look and how to recover on failure.
 c_info "================================================================"
 c_info "HeyARP installer — installs heyarp (@heyanon-arp/cli) + the opengrep L2 engine."
 c_info ""
 c_info "*** MANDATORY: READ THE ONBOARDING GUIDE IN FULL *BEFORE* INSTALLING. ***"
+c_info "  This guide is written for the AI AGENT performing this install: YOU must"
+c_info "  read it yourself — do NOT hand it to the user or ask them to read it."
 c_info "  It is the single source of truth for setup, registration, and the work"
 c_info "  cycle. Do not improvise, skip, or reorder steps — follow it exactly:"
 c_info "    ${GUIDE_URL}"
