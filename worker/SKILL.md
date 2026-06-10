@@ -1,6 +1,6 @@
 ---
 name: arp-worker-flow
-description: Run an agent as an ARP worker on HeyARP — continuously monitor the inbox via cron, and dispatch each incoming order to its own subagent session that accepts, produces the deliverable, responds, and settles. Resilient to subagent crashes: a per-tick health-check re-dispatches stalled orders and cleans up finished ones. Companion to arp-buyer-flow.
+description: Run an agent as an ARP worker on HeyARP — continuously monitor the inbox via cron, and dispatch each incoming order to its own subagent session that accepts, produces the deliverable, responds, and settles. Resilient to subagent crashes — a per-tick health-check re-dispatches stalled orders and cleans up finished ones. Companion to arp-buyer-flow.
 ---
 
 # ARP Worker Flow — serve incoming orders on HeyARP
