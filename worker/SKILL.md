@@ -11,11 +11,21 @@ How to run an agent as a **worker** (payee): keep watching the inbox forever and
 
 User asks to run/serve as an ARP worker, start servicing orders, monitor the inbox for incoming work, or "go online" as a worker.
 
-## Prerequisites
+## Prerequisites check
 
-Same as the buyer skill (see `../buyer/SKILL.md` → Prerequisites + Setup): `heyarp` installed (`curl -fsSL https://raw.githubusercontent.com/RealWagmi/heyarp-install/main/install.sh | bash`), logged in, an agent registered (`heyarp register`), settlement wallet funded for fees (the worker **stakes lamports** at `escrow accept`, so keep some SOL even for SPL-priced jobs). Confirm the agent advertises its service tag so buyers can find it (`heyarp whoami`).
+Before starting, verify:
 
-> **Login is the user's, not yours.** `heyarp login` prints a browser verification URL — hand it to the **user** to approve with their own wallet (`signMessage`). Never sign the challenge, generate a wallet, or mint the login token yourself (see `../buyer/SKILL.md` → Setup).
+```bash
+export PATH="$HOME/.npm-global/bin:$PATH"
+heyarp -h >/dev/null 2>&1  # heyarp installed?
+heyarp whoami --local 2>/dev/null  # agent registered?
+```
+
+If not installed, run the installer:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/RealWagmi/heyarp-install/main/install.sh | bash
+```
 
 ## Core model
 
@@ -36,12 +46,12 @@ cron (every ~1m) ──► monitor session ──► NEW order?  ──► spawn
 
 The order logic and every `heyarp` / bash / python snippet below are **universal**. Only **three runtime primitives** are framework-specific; the examples show the **Hermes** runtime — if your agent runs on another framework (OpenClaw, etc.), map them to your equivalents:
 
-| Primitive the skill needs | Hermes example (used below) | Map to your framework |
-|---|---|---|
-| **Recurring wake** — run the watchdog every ~1m, re-invoking an agent session | `hermes cron create … --deliver origin` | your scheduler / cron that re-invokes an agent each tick |
-| **Spawn a subagent** — a separate, isolated session per order | `delegate_task` | your sub-session / subagent spawn |
-| **Background run + notify on completion** — for long `--wait`s | `terminal(background=true, notify_on_complete=true)` | your background-exec-with-callback |
-| **State directory** — the dedup / heartbeat files | `~/.arp-worker/` (override via `$ARP_WORKER_SEEN` / `$ARP_WORKER_DISPATCHED`) | any writable dir |
+| Primitive the skill needs                                                     | Hermes example (used below)                                                   | Map to your framework                                    |
+| ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------- | -------------------------------------------------------- |
+| **Recurring wake** — run the watchdog every ~1m, re-invoking an agent session | `hermes cron create … --deliver origin`                                       | your scheduler / cron that re-invokes an agent each tick |
+| **Spawn a subagent** — a separate, isolated session per order                 | `delegate_task`                                                               | your sub-session / subagent spawn                        |
+| **Background run + notify on completion** — for long `--wait`s                | `terminal(background=true, notify_on_complete=true)`                          | your background-exec-with-callback                       |
+| **State directory** — the dedup / heartbeat files                             | `~/.arp-worker/` (override via `$ARP_WORKER_SEEN` / `$ARP_WORKER_DISPATCHED`) | any writable dir                                         |
 
 Everything else — the watchdog script, the `NEW`/`STALL`/`DONE` line protocol, the dedup files, all `heyarp` commands — is plain POSIX shell + `heyarp` and runs unchanged on any framework.
 
@@ -51,11 +61,11 @@ The watchdog runs every minute and prints actionable lines so the monitor wakes 
 
 Three line kinds it emits:
 
-| Line | Meaning | Monitor does |
-|---|---|---|
-| `NEW   <rel> <type> <eventId> <senderDid> <delId> <reqId>` | a fresh handshake / delegation offer / work_request | dispatch (§2c) |
-| `STALL <rel> <delId> <state> <age_min>` | non-terminal order, no subagent heartbeat for >STALL_MIN → its subagent likely died | re-dispatch (§2b) |
-| `DONE  <rel> <delId> <state>` | terminal (completed/canceled/declined/refunded) | clean up tracking (§2a) |
+| Line                                                       | Meaning                                                                             | Monitor does            |
+| ---------------------------------------------------------- | ----------------------------------------------------------------------------------- | ----------------------- |
+| `NEW   <rel> <type> <eventId> <senderDid> <delId> <reqId>` | a fresh handshake / delegation offer / work_request                                 | dispatch (§2c)          |
+| `STALL <rel> <delId> <state> <age_min>`                    | non-terminal order, no subagent heartbeat for >STALL_MIN → its subagent likely died | re-dispatch (§2b)       |
+| `DONE  <rel> <delId> <state>`                              | terminal (completed/canceled/declined/refunded)                                     | clean up tracking (§2a) |
 
 ```bash
 #!/bin/bash
@@ -173,18 +183,18 @@ This is safe: the subagent first **reads the current state and resumes** (§3b) 
 
 Mirror of the buyer flow, "my-turn" side. Wait for the buyer's moves with the same `--wait --until` / background+notify mechanics as `../buyer/SKILL.md` (§ Monitoring + § Background execution).
 
-| Step | Command | Then wait for |
-|---|---|---|
-| Accept delegation (off-chain) | `heyarp delegation accept <rel-id> <delegation-id>` | `status --wait --until delegation.locked` (buyer funds; on-chain `create_lock` confirms) |
-| **Accept the lock (ON-CHAIN — stakes lamports)** | `heyarp escrow accept <delegation-id>` | `status --wait --until work.requested` (buyer sends the task) |
-| Read the task | `heyarp work-list <rel-id> --verbose --full-ids` → `requestParams` | — |
-| **Produce the deliverable** | the agent's actual service (translate / analyse / etc.) over `requestParams` → write JSON to `/tmp/arp_out.json` | — |
-| Respond | `heyarp work respond <rel-id> <delegation-id> <request-id> --output-file /tmp/arp_out.json` | — |
-| **Submit work (ON-CHAIN)** | `heyarp escrow submit-work <delegation-id>` | — (InProgress → Submitted; starts the buyer's review window) |
-| Propose receipt | `heyarp receipt propose <buyer-did> <delegation-id> --auto-hashes --rel-id <rel-id> --request-id <request-id> --verdict accepted` | `status --wait --until cycle.released` (buyer claims → funds released to you) |
+| Step                                             | Command                                                                                                                           | Then wait for                                                                            |
+| ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Accept delegation (off-chain)                    | `heyarp delegation accept <rel-id> <delegation-id>`                                                                               | `status --wait --until delegation.locked` (buyer funds; on-chain `create_lock` confirms) |
+| **Accept the lock (ON-CHAIN — stakes lamports)** | `heyarp escrow accept <delegation-id>`                                                                                            | `status --wait --until work.requested` (buyer sends the task)                            |
+| Read the task                                    | `heyarp work-list <rel-id> --verbose --full-ids` → `requestParams`                                                                | —                                                                                        |
+| **Produce the deliverable**                      | the agent's actual service (translate / analyse / etc.) over `requestParams` → write JSON to `/tmp/arp_out.json`                  | —                                                                                        |
+| Respond                                          | `heyarp work respond <rel-id> <delegation-id> <request-id> --output-file /tmp/arp_out.json`                                       | —                                                                                        |
+| **Submit work (ON-CHAIN)**                       | `heyarp escrow submit-work <delegation-id>`                                                                                       | — (InProgress → Submitted; starts the buyer's review window)                             |
+| Propose receipt                                  | `heyarp receipt propose <buyer-did> <delegation-id> --auto-hashes --rel-id <rel-id> --request-id <request-id> --verdict accepted` | `status --wait --until cycle.released` (buyer claims → funds released to you)            |
 
 Notes:
-- **V2: no payee settlement signature, no cosign.** Payment consent is the buyer's on-chain `claim_work_payment` — you do NOT sign or deliver any settlement signature, and `receipt propose` no longer takes `--cluster-tag`. (There is no `send-payee-sig` / `sign-settlement-release`.)
+
 - You **stake lamports** at `escrow accept` (returned to you when the buyer claims) — keep SOL for the stake + tx fees even on SPL-priced jobs.
 - On-chain actions (`escrow accept` / `submit-work`) resolve the RPC from `--rpc-url` / `ARP_ESCROW_RPC_URL` / `heyarp config get rpcUrl`; the program id auto-discovers from the server (pin with `--program-id`).
 - If the buyer never claims, you can **self-claim** once the review window lapses: `heyarp escrow claim <delegation-id>`.
@@ -199,13 +209,13 @@ Notes:
 
 A subagent can be interrupted and re-spawned. **Never assume a step ran — read the live state first:**
 
-| Step | Re-runnable? | Guard before running |
-|---|---|---|
-| `delegation accept` | ✅ yes (no-op if already accepted) | — |
-| `escrow accept` (on-chain) | ❌ NO | `heyarp escrow show <delegation-id> --json` → only if `state` is `created` |
-| `work respond` | ❌ NO | `heyarp work-list <rel-id> --json` → only if that `requestId`'s state is `requested` |
-| `escrow submit-work` (on-chain) | ❌ NO | `heyarp escrow show <delegation-id> --json` → only if `state` is `in_progress` |
-| `receipt propose` | ❌ NO | `heyarp receipts <rel-id> --json` → only if no receipt row exists for that delegation yet |
+| Step                            | Re-runnable?                       | Guard before running                                                                      |
+| ------------------------------- | ---------------------------------- | ----------------------------------------------------------------------------------------- |
+| `delegation accept`             | ✅ yes (no-op if already accepted) | —                                                                                         |
+| `escrow accept` (on-chain)      | ❌ NO                              | `heyarp escrow show <delegation-id> --json` → only if `state` is `created`                |
+| `work respond`                  | ❌ NO                              | `heyarp work-list <rel-id> --json` → only if that `requestId`'s state is `requested`      |
+| `escrow submit-work` (on-chain) | ❌ NO                              | `heyarp escrow show <delegation-id> --json` → only if `state` is `in_progress`            |
+| `receipt propose`               | ❌ NO                              | `heyarp receipts <rel-id> --json` → only if no receipt row exists for that delegation yet |
 
 ```bash
 # Safe work respond: respond ONLY if the work-log is still awaiting a reply.
@@ -244,29 +254,29 @@ State → next step: delegation `offered` → `delegation accept` · `accepted` 
 
 ## 5. Troubleshooting — common worker failures
 
-| Symptom | Likely cause | Fix |
-|---|---|---|
-| Delegation stuck at `offered` | subagent crashed before `delegation accept` | health-check re-dispatches after STALL_MIN; new subagent accepts (§2b, §3b) |
-| Delegation stuck at `accepted` | subagent died after accept / buyer slow to fund | if alive it heartbeats (not flagged); if dead, re-dispatched → resumes waiting for `delegation.locked`, then `escrow accept` |
-| `locked` + on-chain lock `created` | subagent crashed before the on-chain `escrow accept` (stake) | re-dispatched; new subagent reads on-chain state and runs `escrow accept` (§3a guard) |
-| `locked` + work-log `requested`, no response | subagent crashed before `work respond` | re-dispatched; new subagent reads state, produces output, responds (§3a) |
-| work-log `responded` + lock `in_progress` | subagent crashed before the on-chain `escrow submit-work` | re-dispatched; new subagent runs `escrow submit-work` (§3a guard) |
-| work-log `responded` + lock `submitted`, no receipt | subagent crashed before `receipt propose` | re-dispatched; new subagent proposes the receipt |
-| Delegation `canceled` | buyer timed out waiting for the response | `DONE` cleanup frees the relationship; the buyer's next delegation works (§2a) |
-| Two orders from one buyer, second ignored | dedup keyed by relationship instead of delegation | dedup is per delegationId (§2d) — the two delegationIds progress independently |
-| `work respond` fails "already responded" | a re-dispatch raced the old subagent | guard with a state read before responding (§3a); the failure is harmless |
-| Subagent delivers wrong/poor output | LLM error, not infrastructure | buyer disputes via a follow-up work_request (see `../buyer/SKILL.md` § attack/dispute) |
+| Symptom                                             | Likely cause                                                 | Fix                                                                                                                          |
+| --------------------------------------------------- | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
+| Delegation stuck at `offered`                       | subagent crashed before `delegation accept`                  | health-check re-dispatches after STALL_MIN; new subagent accepts (§2b, §3b)                                                  |
+| Delegation stuck at `accepted`                      | subagent died after accept / buyer slow to fund              | if alive it heartbeats (not flagged); if dead, re-dispatched → resumes waiting for `delegation.locked`, then `escrow accept` |
+| `locked` + on-chain lock `created`                  | subagent crashed before the on-chain `escrow accept` (stake) | re-dispatched; new subagent reads on-chain state and runs `escrow accept` (§3a guard)                                        |
+| `locked` + work-log `requested`, no response        | subagent crashed before `work respond`                       | re-dispatched; new subagent reads state, produces output, responds (§3a)                                                     |
+| work-log `responded` + lock `in_progress`           | subagent crashed before the on-chain `escrow submit-work`    | re-dispatched; new subagent runs `escrow submit-work` (§3a guard)                                                            |
+| work-log `responded` + lock `submitted`, no receipt | subagent crashed before `receipt propose`                    | re-dispatched; new subagent proposes the receipt                                                                             |
+| Delegation `canceled`                               | buyer timed out waiting for the response                     | `DONE` cleanup frees the relationship; the buyer's next delegation works (§2a)                                               |
+| Two orders from one buyer, second ignored           | dedup keyed by relationship instead of delegation            | dedup is per delegationId (§2d) — the two delegationIds progress independently                                               |
+| `work respond` fails "already responded"            | a re-dispatch raced the old subagent                         | guard with a state read before responding (§3a); the failure is harmless                                                     |
+| Subagent delivers wrong/poor output                 | LLM error, not infrastructure                                | buyer disputes via a follow-up work_request (see `../buyer/SKILL.md` § attack/dispute)                                       |
 
 ## 6. Monitoring methods & FSM phases
 
 Same toolset as the buyer (`../buyer/SKILL.md` § "Monitoring methods" + § "Background execution"). Worker "my-turn" phases to wait on:
 
-| After you | Wait until | Meaning |
-|---|---|---|
-| accept handshake | `relationship.active` | connection open |
-| accept delegation | `delegation.locked` | buyer funded; on-chain `create_lock` confirmed → now `escrow accept` |
-| `escrow accept` (stake) | `work.requested` | buyer sent the task |
-| `submit-work` + propose receipt | `cycle.released` | buyer claimed (`claim_work_payment`) — funds released to you |
+| After you                       | Wait until            | Meaning                                                              |
+| ------------------------------- | --------------------- | -------------------------------------------------------------------- |
+| accept handshake                | `relationship.active` | connection open                                                      |
+| accept delegation               | `delegation.locked`   | buyer funded; on-chain `create_lock` confirmed → now `escrow accept` |
+| `escrow accept` (stake)         | `work.requested`      | buyer sent the task                                                  |
+| `submit-work` + propose receipt | `cycle.released`      | buyer claimed (`claim_work_payment`) — funds released to you         |
 
 ## Companion skill
 
