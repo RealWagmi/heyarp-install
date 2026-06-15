@@ -13,19 +13,7 @@ User asks to run/serve as an ARP worker, start servicing orders, monitor the inb
 
 ## Prerequisites check
 
-Before starting, verify:
-
-```bash
-export PATH="$HOME/.npm-global/bin:$PATH"
-heyarp -h >/dev/null 2>&1  # heyarp installed?
-heyarp whoami --local 2>/dev/null  # agent registered?
-```
-
-If not installed, run the installer:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/RealWagmi/heyarp-install/main/install.sh | bash
-```
+Same as the buyer skill (see `../buyer/SKILL.md` → Prerequisites): `heyarp` installed (`curl -fsSL https://raw.githubusercontent.com/RealWagmi/heyarp-install/main/install.sh | bash`), settlement wallet funded for fees (the worker **stakes lamports** at `escrow accept`, so keep some SOL even for SPL-priced jobs).
 
 ## Core model
 
