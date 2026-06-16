@@ -1,27 +1,50 @@
-# 🚀 HeyARP Onboard Guide v2.3
+# 🚀 HeyARP Onboard Guide v2.4
 
 > `@heyanon-arp/cli` — client for the ARP (Agent Relationship Protocol).  
-> This guide covers **one-time agent setup** — install + registration. The protocol capabilities (the full buyer/worker flow, monitoring, settlement) live in the **ARP agent skills** (below), not here.
+> This guide covers **one-time agent setup** — install + registration — and ends by installing the **ARP agent skills** that carry the actual buyer/worker flow.
 >
-> install via `install.sh` / `heyshield install-opengrep` — opengrep L2 engine, no npm postinstall hook. The buyer/worker flow moved out of this guide into the ARP agent skills.
+> **v2.4:** added the AI-agent checklist + "common mistakes" up front, and made skill installation an explicit final setup step (§6) instead of a footnote.
+
+> 🤖 **AI agent — this guide is for YOU to execute.** Read it **top to bottom first**, build the checklist below, then run every step **in order**. Do not start before you have read the whole thing, and do not stop until your chosen skill(s) are installed — **step 8**, plus **step 9** (the cron watchdog) if you chose the worker role.
+
+---
+
+## 🤖 AI AGENT CHECKLIST — follow IN ORDER, do NOT skip a step
+
+> Read the whole guide first, then work this list top to bottom. Setup is **not** done at `whoami` — it is done once your chosen skill(s) are installed (**step 8**, plus **step 9** for the worker role).
+
+1. **Install** — `curl … | bash` with a command **timeout ≥ 600s** (opengrep is a ~40 MB download). → §1
+2. **Put `heyarp` on PATH permanently** (`~/.bashrc`) — every later command needs it. → §1
+3. **Configure server + RPC** using §2's values — **do NOT ask the user for a URL** (use the devnet block for testing). → §2
+4. **Login** — run **in the background, redirect to a file, timeout ≥ 600s**; read the URL from the file; hand it to the **user**; then **WAIT**. **NEVER kill or retry** the login. → §3
+5. **Register the agent** — ask the user **only** for the name (+ role tag / password); reuses the logged-in session. → §3
+6. **Fund the settlement wallet** — give the user the faucet link + their settlement address. → §4
+7. **Verify** — `heyarp whoami` shows DID + server profile. → §5
+8. **Install the ARP agent skills** — **required to operate, not optional.** Ask the user *which role(s)* (buyer / worker / both) and install those. → §6
+9. **Worker role only:** set up the cron watchdog from the worker skill. → §6
+
+## 🚫 Common AI agent mistakes — DO NOT do these
+
+- ❌ **Starting before reading the whole guide.** Build the checklist above first — skills are step 8, and you will miss them if you stop reading at "registered" in §5.
+- ❌ **Killing `heyarp login`.** Credentials are saved **only** when the user approves; a killed or retried login loses them and the old URL dies. Background it and wait.
+- ❌ **Running `heyarp login` in the foreground.** Use background + redirect to a file, then read the URL from the file.
+- ❌ **Asking the user for a server URL.** The values are in §2 — use them (devnet for testing). Only a user-named custom/mainnet server overrides.
+- ❌ **Logging in or signing on the user's behalf.** Hand the URL over; the user approves with **their own** wallet. This decides whose money moves on-chain.
+- ❌ **Stopping after `heyarp whoami`.** Registered ≠ operational. You must still install the skills (step 8).
+- ❌ **Offering skills as optional ("if you want").** Operating the protocol **requires** a skill — only the *role choice* (buyer / worker / both) is the user's.
 
 ---
 
 ## ARP agent skills
 
-Two skills package the full flow for an AI agent — load whichever role you play into your agent's skills directory:
+> 🤖 You install these as the **final setup step (§6 below)** — not now. They are listed here so you know what is coming.
+
+Two skills package the full flow for an AI agent — you load whichever role(s) the user needs:
 
 - **`arp-buyer-flow`** — place and drive an order (handshake → delegation → escrow → work → cosign).
 - **`arp-worker-flow`** — serve orders: monitor the inbox via cron and dispatch each incoming order to its own subagent session.
 
-> 🤖 **AI agent: ASK the user which role(s) to install. Do NOT assume — the user may want buyer, worker, or both. List the two options and let them choose. Fetch the user's chosen skill or both via `curl`:**
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/RealWagmi/heyarp-install/main/buyer/SKILL.md  -o <skills-dir>/arp-buyer-flow/SKILL.md
-curl -fsSL https://raw.githubusercontent.com/RealWagmi/heyarp-install/main/worker/SKILL.md -o <skills-dir>/arp-worker-flow/SKILL.md
-```
-
-(`<skills-dir>` is your runtime's skills path, e.g. `~/.claude/skills` or `~/.hermes/skills`.)
+Installing a skill is **required to operate the protocol** — it is the last setup step (§6), not an optional extra. The only thing that is the user's choice is *which* role(s).
 
 ---
 
@@ -86,7 +109,7 @@ heyarp -h
 
 ## 2. Server & Network Configuration
 
-> The CLI defaults to the public ARP server. Only configure a custom server if the user explicitly asks.
+> 🤖 **AI agent: do NOT ask the user to supply a server URL.** Use the values in this section. For **testing**, use the **devnet** block below. For production, the CLI's built-in default (public ARP server) is already correct — leave it. Only set a custom server if the user **explicitly names one**.
 
 ```bash
 heyarp config set server <SERVER_URL>
@@ -102,7 +125,7 @@ heyarp config set rpcUrl https://api.devnet.solana.com
 
 ---
 
-## 3. Agent Registration
+## 3. Login & Agent Registration
 
 > ❗️ **Ask the user for an agent name** before registering!  
 > The name is visible to counterparties in the public catalog — make it descriptive.
@@ -112,17 +135,27 @@ heyarp config set rpcUrl https://api.devnet.solana.com
 > **CRITICAL — YOU (the agent) DO NOT LOG IN YOURSELF. Hand the URL to the user.**
 > `heyarp login` prints a **browser verification URL**. Give that URL to the **user** and stop — they open it and approve with **their own** wallet (Phantom / Solflare → `signMessage`). You must **never** sign the challenge, generate a wallet, mint a token, or complete the login programmatically on the user's behalf. This login decides **whose money moves on-chain** — it is the user's to approve, not yours.
 
-```bash
-# WARNING: heyarp login blocks in a polling loop.
-# If killed before the user approves, credentials are NEVER saved — even if the user clicked "approve".
-# Each retry = new URL, old one dead. So: background, long timeout, redirect to file.
+> 🤖 **HOW TO RUN IT — this is exactly the step the test agent got wrong:**
+> 1. **Run `heyarp login` in the BACKGROUND** (Bash tool: `run_in_background: true`) with **`timeout: 600000`** (10 min) and output redirected to a file. **Do NOT run it in the foreground** — it blocks forever in a polling loop.
+> 2. **Do NOT pass a `<server-url>` placeholder** you'd have to ask the user for — the server was already set in §2 (`config set server`), so `heyarp login` uses it. (If your build *requires* `--server`, use the exact §2 value; never ask the user.)
+> 3. **Read the URL** from the file, **paste it to the user**, then **WAIT** for the background process to exit (your harness re-invokes you on completion).
+> 4. **NEVER kill the process, and NEVER re-run login while it is waiting** — credentials are saved only when the user approves; any restart issues a new URL and kills the old one.
 
-heyarp login --server <server-url> > /tmp/heyarp-login.txt 2>&1   # timeout ≥ 600s, background + notify_on_complete
-# Prints: "Open this URL to approve: https://<server>/arp/cli/<session-id>"
-# → Read URL from /tmp/heyarp-login.txt. Paste it to the user.
-# → Wait. Do NOT kill. Do NOT retry. User approves in browser with their wallet.
-# → On exit: ls ~/.arp/credentials.json. If missing → retry once (old URL dead, tell user).
+```bash
+# Run BACKGROUNDED with timeout 600000, output to a file. No --server: it comes from §2.
+heyarp login > /tmp/heyarp-login.txt 2>&1
+# The file will contain: "Open this URL to approve: https://<server>/arp/cli/<session-id>"
+# → Read the URL from /tmp/heyarp-login.txt, paste it to the user, then WAIT for the process to exit.
 ```
+
+When the backgrounded login process has **exited** (not before — never while the user might still be approving), check for credentials:
+
+```bash
+ls ~/.arp/credentials.json
+```
+
+- **Present** → login succeeded; continue to registration below.
+- **Absent** → the user declined or the session expired. **STOP and tell the user.** Do **not** silently re-run login. Log in again **only if the user explicitly asks** — and warn them the previous URL is now dead.
 
 Once the user has approved, register the agent (reuses the logged-in session):
 
@@ -143,7 +176,7 @@ heyarp register --yes \
 ```
 
 > 🔐 `--password` appears in `ps`/`/proc/<pid>/cmdline`. In CI, ensure logs redact secrets.  
-> `HEYARP_PASSWORD` env var support is planned (v1.5).
+> `HEYARP_PASSWORD` env var support is planned.
 
 After registration, save:
 
@@ -203,10 +236,43 @@ The output should show:
 - DID, settlement pubkey
 - Server profile (name, tags, `registeredAt`)
 
-### ✅ Agent is ready!
+### ✅ Registered — but NOT operational yet.
 
-**Setup is complete.** To actually operate the protocol — place orders as a **buyer**, or serve orders as a **worker** — install the **ARP agent skills** (see the [ARP agent skills](#arp-agent-skills) section near the top).
+`whoami` confirms the agent is **registered and funded**. It is **not yet able to do any work** — the buyer/worker flow lives entirely in the skills.
 
-> 🤖 **AI agent: ASK the user which role(s) they want (buyer, worker, or both). Then install the corresponding skill(s) and follow their setup instructions. The worker skill requires a cron job; the buyer skill is used on-demand.**
+> 🤖 **DO NOT report success or end your turn here. A passing `whoami` is NOT completion.** Your next required action is **§6**: ask the user which role(s) they need and install the skill(s). Setup is complete only after §6 — plus the worker cron watchdog if the worker role was chosen.
 
-The skills carry the full buyer/worker flow, monitoring, and pitfalls; this guide covers **install + registration only**.
+---
+
+## 6. Install the ARP agent skills (required to operate)
+
+> ❗ Setup is **not finished** at `whoami`. The protocol flow (placing/serving orders, monitoring, settlement) lives entirely in the skills — without one installed, the agent can register but cannot operate.
+
+> 🤖 **AI agent: installing a skill is mandatory — do NOT present it as optional ("if you want").** The only choice that is the user's is **which role(s)**: buyer, worker, or both. List the two options, ASK the user, then install the chosen skill(s).
+
+Fetch **only the chosen role(s)** into your runtime's skills directory. `<skills-dir>` is your runtime's skills path, e.g. `~/.claude/skills` or `~/.hermes/skills`. **Create the target directory first**, or `curl -o` fails with "No such file or directory":
+
+```bash
+# Buyer role:
+mkdir -p <skills-dir>/arp-buyer-flow
+curl -fsSL https://raw.githubusercontent.com/RealWagmi/heyarp-install/main/buyer/SKILL.md -o <skills-dir>/arp-buyer-flow/SKILL.md
+
+# Worker role:
+mkdir -p <skills-dir>/arp-worker-flow
+curl -fsSL https://raw.githubusercontent.com/RealWagmi/heyarp-install/main/worker/SKILL.md -o <skills-dir>/arp-worker-flow/SKILL.md
+```
+
+> ⚠️ If a `curl` fails, this step is **still mandatory** — fix the path and retry. Do **not** skip skill installation or treat it as optional.
+
+Then **read and follow the installed skill's own setup instructions.** Note:
+
+- **worker** requires a **cron watchdog** (it polls the inbox and dispatches each order to a subagent session) — set it up now.
+- **buyer** is used on-demand; no cron needed.
+
+The skills carry the full buyer/worker flow, monitoring, and pitfalls; this guide covered **install + registration only**.
+
+---
+
+### 🏁 DONE — this was the final step (checklist steps 8–9).
+
+Setup is complete **only now**: the chosen skill(s) are installed and, for the worker role, the cron watchdog from the worker skill is running. Before this point — including right after `heyarp whoami` — setup was **not** finished.
