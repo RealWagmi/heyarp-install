@@ -1,4 +1,4 @@
-# 🚀 HeyARP Onboard Guide v2.2
+# 🚀 HeyARP Onboard Guide v2.3
 
 > `@heyanon-arp/cli` — client for the ARP (Agent Relationship Protocol).  
 > This guide covers **one-time agent setup** — install + registration. The protocol capabilities (the full buyer/worker flow, monitoring, settlement) live in the **ARP agent skills** (below), not here.
@@ -14,14 +14,14 @@ Two skills package the full flow for an AI agent — load whichever role you pla
 - **`arp-buyer-flow`** — place and drive an order (handshake → delegation → escrow → work → cosign).
 - **`arp-worker-flow`** — serve orders: monitor the inbox via cron and dispatch each incoming order to its own subagent session.
 
-Fetch via `curl`:
+> 🤖 **AI agent: ASK the user which role(s) to install. Do NOT assume — the user may want buyer, worker, or both. List the two options and let them choose. Fetch the user's chosen skill or both via `curl`:**
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/RealWagmi/heyarp-install/main/buyer/SKILL.md  -o <skills-dir>/arp-buyer-flow/SKILL.md
 curl -fsSL https://raw.githubusercontent.com/RealWagmi/heyarp-install/main/worker/SKILL.md -o <skills-dir>/arp-worker-flow/SKILL.md
 ```
 
-(`<skills-dir>` is your runtime's skills path, e.g. `~/.claude/skills`.)
+(`<skills-dir>` is your runtime's skills path, e.g. `~/.claude/skills` or `~/.hermes/skills`.)
 
 ---
 
@@ -43,6 +43,16 @@ The L2 CodeShield engine — `opengrep`, a single self-contained binary (~40 MB,
 ```bash
 curl -fsSL https://raw.githubusercontent.com/RealWagmi/heyarp-install/main/install.sh | bash
 ```
+
+> ⚠️ **PATH trap:** When npm installs to a user-level prefix (`~/.npm-global`), `heyarp` is NOT automatically on PATH. After the one-liner, **immediately** add it:
+>
+> ```bash
+> export PATH="$HOME/.npm-global/bin:$PATH"
+> # Make it permanent:
+> grep -q 'npm-global/bin' ~/.bashrc 2>/dev/null || echo 'export PATH="$HOME/.npm-global/bin:$PATH"' >> ~/.bashrc
+> ```
+>
+> **Every command in this guide assumes `heyarp` is on PATH.** If you skip this, all subsequent commands will fail with "command not found". Prepend `export PATH=...` before each command if running in a fresh shell.
 
 > Served from the [`RealWagmi/heyarp-install`](https://github.com/RealWagmi/heyarp-install) repo. (A custom domain can be used instead of the raw GitHub URL.)
 
@@ -103,10 +113,15 @@ heyarp config set rpcUrl https://api.devnet.solana.com
 > `heyarp login` prints a **browser verification URL**. Give that URL to the **user** and stop — they open it and approve with **their own** wallet (Phantom / Solflare → `signMessage`). You must **never** sign the challenge, generate a wallet, mint a token, or complete the login programmatically on the user's behalf. This login decides **whose money moves on-chain** — it is the user's to approve, not yours.
 
 ```bash
-heyarp login --server <server-url>
+# WARNING: heyarp login blocks in a polling loop.
+# If killed before the user approves, credentials are NEVER saved — even if the user clicked "approve".
+# Each retry = new URL, old one dead. So: background, long timeout, redirect to file.
+
+heyarp login --server <server-url> > /tmp/heyarp-login.txt 2>&1   # timeout ≥ 600s, background + notify_on_complete
 # Prints: "Open this URL to approve: https://<server>/arp/cli/<session-id>"
-# → Paste that URL to the user. Wait until they confirm they approved it
-#   in their wallet. Do NOT proceed until login succeeds.
+# → Read URL from /tmp/heyarp-login.txt. Paste it to the user.
+# → Wait. Do NOT kill. Do NOT retry. User approves in browser with their wallet.
+# → On exit: ls ~/.arp/credentials.json. If missing → retry once (old URL dead, tell user).
 ```
 
 Once the user has approved, register the agent (reuses the logged-in session):
@@ -190,4 +205,8 @@ The output should show:
 
 ### ✅ Agent is ready!
 
-**Setup is complete.** To actually operate the protocol — place orders as a **buyer**, or serve orders as a **worker** — install the **ARP agent skills** (see the [ARP agent skills](#arp-agent-skills) section near the top). The skills carry the full buyer/worker flow, monitoring, and pitfalls; this guide covers **install + registration only**.
+**Setup is complete.** To actually operate the protocol — place orders as a **buyer**, or serve orders as a **worker** — install the **ARP agent skills** (see the [ARP agent skills](#arp-agent-skills) section near the top).
+
+> 🤖 **AI agent: ASK the user which role(s) they want (buyer, worker, or both). Then install the corresponding skill(s) and follow their setup instructions. The worker skill requires a cron job; the buyer skill is used on-demand.**
+
+The skills carry the full buyer/worker flow, monitoring, and pitfalls; this guide covers **install + registration only**.
