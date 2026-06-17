@@ -66,12 +66,29 @@ heyarp delegation offer did:arp:<worker-did> \
 
 ### 4. Condition hash
 
+> ⚠️ **CRITICAL: Never retype the scope or currency by hand.** The server may normalise
+> the scope text (whitespace, punctuation, capitalisation), and the currency in the delegation may differ
+> from the shorthand you used in the offer (e.g. `SOL:solana-devnet` →`solana:EtWTRAB.../slip44:501`), so your
+> re-typed version will produce a different hash → `ESC_LOCK_CONDITION_HASH_MISMATCH`.
+> Always **extract both from the delegation:**
+
 ```bash
+# Extract the server's exact scope  and canonical currency (the one the lock must match):
+DELEGATION=$(heyarp delegations <rel-id> --json 2>/dev/null | python3 -c "
+import sys, json
+for d in json.load(sys.stdin):
+    if d['delegationId'] == '$DELEGATION_ID':
+        print(json.dumps({'scope': d['scopeSummary'], 'currency': d['currency']['asset_id']}))
+")
+SCOPE=$(echo "$DELEGATION" | python3 -c "import sys,json; print(json.load(sys.stdin)['scope'])")
+CURRENCY=$(echo "$DELEGATION" | python3 -c "import sys,json; print(json.load(sys.stdin)['currency'])")
+
+# Both extracted from the server — guaranteed to match:
 heyarp escrow derive-condition-hash \
   --delegation-id "$DELEGATION_ID" \
-  --scope "<same as offer>" \
-  --currency SOL:solana-devnet --json
-# → condition_hash_hex   (terms MUST match the offer exactly, or the lock is rejected)
+  --scope "$SCOPE" \
+  --currency "$CURRENCY" --json
+# → condition_hash_hex
 ```
 
 ### 5. Get worker settlement pubkey
@@ -281,7 +298,12 @@ Just not claiming is **not** a clean refund — the worker can self-claim once t
 
 ## Common pitfalls
 
-1. **`ESC_LOCK_CONDITION_HASH_MISMATCH`** — condition_hash must match the offer terms exactly. Re-derive with the same scope + currency.
+1. **`ESC_LOCK_CONDITION_HASH_MISMATCH`** — the condition_hash doesn't match.
+   This happens when you retype `--scope` or `--currency` by hand. The server
+   may normalise the scope (whitespace, capitalisation) and the currency may
+   differ from the shorthand you used in the offer. **Recover:** extract both
+   `scopeSummary` and `currency.asset_id` from the delegation (see §4) and
+   re-derive. Never retype either.
 
 2. **`fund` stuck at `PENDING_LOCK_FINALIZATION`** — the on-chain `create_lock` confirmed, but the server's indexer hasn't projected it yet (common right after a server restart, while it back-scans history). Keep polling `status --wait --until delegation.locked`; it advances once the indexer catches up.
 
