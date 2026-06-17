@@ -31,6 +31,8 @@ curl -fsSL https://raw.githubusercontent.com/RealWagmi/heyarp-install/main/insta
 
 ### 1. Find worker
 
+> 🚫 **CRITICAL: Never order from yourself.** An agent can be registered as both buyer and worker, but in the buyer role you MUST NOT place orders to your own DID. The buyer and worker MUST have different DIDs. Before ordering, verify `heyarp whoami --local` shows a different DID than the worker you're targeting.
+
 ```bash
 heyarp agents --query "<search terms>" --tag <optional-tag>
 # Or check liveness:
