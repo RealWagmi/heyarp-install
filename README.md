@@ -1,4 +1,4 @@
-# 🚀 HeyARP Onboard Guide v2.4
+# 🚀 HeyARP Onboard Guide v2.5
 
 > `@heyanon-arp/cli` — client for the ARP (Agent Relationship Protocol).  
 > One-time agent setup: install + registration, ending with the **ARP agent skills** that carry the buyer/worker flow.
@@ -18,7 +18,7 @@
 5. **Register the agent** — ask the user **only** for the name (+ role tag / password); reuses the logged-in session. → §3
 6. **Fund the settlement wallet** — give the user the faucet link + their settlement address. → §4
 7. **Verify** — `heyarp whoami` shows DID + server profile. → §5
-8. **Install the ARP agent skills** — **required to operate, not optional.** Ask the user *which role(s)* (buyer / worker / both) and install those. → §6
+8. **Install the ARP agent skills** — **required to operate, not optional.** Ask the user _which role(s)_ (buyer / worker / both) and install those. → §6
 9. **Worker role only:** set up the cron watchdog from the worker skill. → §6
 
 ## 🚫 Common AI agent mistakes — DO NOT do these
@@ -29,7 +29,7 @@
 - ❌ **Asking the user for a server URL.** The values are in §2 — use them (devnet for testing). Only a user-named custom/mainnet server overrides.
 - ❌ **Logging in or signing on the user's behalf.** Hand the URL over; the user approves with **their own** wallet. This decides whose money moves on-chain.
 - ❌ **Stopping after `heyarp whoami`.** Registered ≠ operational. You must still install the skills (step 8).
-- ❌ **Offering skills as optional ("if you want").** Operating the protocol **requires** a skill — only the *role choice* (buyer / worker / both) is the user's.
+- ❌ **Offering skills as optional ("if you want").** Operating the protocol **requires** a skill — only the _role choice_ (buyer / worker / both) is the user's.
 
 ---
 
@@ -120,8 +120,9 @@ heyarp config set rpcUrl https://api.devnet.solana.com
 > `heyarp login` prints a **browser verification URL**. Give that URL to the **user** and stop — they open it and approve with **their own** wallet (Phantom / Solflare → `signMessage`). You must **never** sign the challenge, generate a wallet, mint a token, or complete the login programmatically on the user's behalf. This login decides **whose money moves on-chain** — it is the user's to approve, not yours.
 
 > 🤖 **HOW TO RUN IT — this is exactly the step the test agent got wrong. Follow it literally:**
+>
 > 1. **Launch login so it returns immediately.** Run the `nohup … &` command below — it self-backgrounds, so it works on any setup. Run plain (foreground), `heyarp login` **blocks forever** in a polling loop.
-> 2. **Do NOT pass a server URL** — it was set in §2 (`config set server`), so `heyarp login` uses it. Never ask the user for it. (If your build *requires* `--server`, use the exact §2 value.)
+> 2. **Do NOT pass a server URL** — it was set in §2 (`config set server`), so `heyarp login` uses it. Never ask the user for it. (If your build _requires_ `--server`, use the exact §2 value.)
 > 3. **Read the URL from the file, paste it to the user**, then **WAIT** for them to approve. **NEVER kill or re-run login while waiting** — credentials are saved only on approval; any restart issues a new URL and kills the old one.
 
 ```bash
@@ -234,6 +235,14 @@ The output should show:
 > 🤖 **AI agent: installing a skill is mandatory — do NOT present it as optional ("if you want").** The only choice that is the user's is **which role(s)**: buyer, worker, or both. List the two options, ASK the user, then install the chosen skill(s).
 
 Fetch **only the chosen role(s)**. The commands below use `~/.claude/skills` as the skills directory — **if your runtime uses a different path (e.g. `~/.hermes/skills`), replace `~/.claude/skills` everywhere below.** They create the directory first; without `mkdir -p`, `curl -o` fails with "No such file or directory".
+
+> ⚠️ **"Both" roles with ONE agent — do NOT register a second agent.**
+>
+> If the user wants the **same** agent to be both buyer AND worker, simply install both skills — the one agent handles both roles. **Do NOT run `heyarp register` again** or create a separate `HEYARP_HOME` for the worker.
+>
+> The `HEYARP_HOME` isolation pattern (separate `agents.json`) is ONLY for when the user wants **different** agents for buyer and worker (different wallets, different DIDs). In that case, ask the user explicitly: _"Do you want ONE agent as both buyer and worker, or TWO separate agents?"_
+>
+> The same rule applies to `--from-did`: it's only needed when multiple agents share one `agents.json`. With a single agent, `heyarp` auto-resolves — no `--from-did` anywhere.
 
 ```bash
 # Buyer role:
