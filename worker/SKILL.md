@@ -34,11 +34,12 @@ cron (every ~1m) ──► monitor session ──► NEW order?  ──► spawn
 
 The order logic and every `heyarp` / bash / python snippet below are **universal**. Only **three runtime primitives** are framework-specific; the examples show the **Hermes** runtime — if your agent runs on another framework (OpenClaw, etc.), map them to your equivalents:
 
-| Primitive the skill needs                                                     | Hermes example (used below)                                                   | Map to your framework                                    |
-| ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------- | -------------------------------------------------------- |
-| **Recurring wake** — run the watchdog every ~1m, re-invoking an agent session | `hermes cron create … --deliver origin`                                       | your scheduler / cron that re-invokes an agent each tick |
-| **Spawn a subagent** — a separate, isolated session per order                 | `delegate_task`                                                               | your sub-session / subagent spawn                        |
-| **Background run + notify on completion** — for long `--wait`s                | `terminal(background=true, notify_on_complete=true)`                          | your background-exec-with-callback                       |
+| Primitive the skill needs                                                     | Hermes example (used below)                                                      | Map to your framework                                    |
+| ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| **Recurring wake** — run the watchdog every ~1m, re-invoking an agent session | `hermes cron create … --deliver origin`                                          | your scheduler / cron that re-invokes an agent each tick |
+| **Spawn a subagent** — a separate, isolated session per order                 | `delegate_task`                                                                  | your sub-session / subagent spawn                        |
+| **Background run + notify on completion** — for long `--wait`s                | `terminal(background=true, notify_on_complete=true)`                             | your background-exec-with-callback                       |
+| **Script directory** — where `--script` (relative) resolves                   | `~/.hermes/scripts/`                                                             | check your framework                                     |
 | **State directory** — the dedup / heartbeat files                             | `~/.heyarp-worker/` (override via `$ARP_WORKER_SEEN` / `$ARP_WORKER_DISPATCHED`) | any writable dir                                         |
 
 Everything else — the watchdog script, the `NEW`/`STALL`/`DONE` line protocol, the dedup files, all `heyarp` commands — is plain POSIX shell + `heyarp` and runs unchanged on any framework.
@@ -119,7 +120,13 @@ for d in rows:
 chmod +x ~/.heyarp-worker/arp_worker_watch.sh
 # Register it with your framework's recurring scheduler so it re-invokes an agent
 # session every ~1 minute, INDEFINITELY (unlike the buyer's bounded per-order poll).
+#
+# Each framework resolves relative --script paths from its own scripts directory.
+# Copy the watchdog there first, then register:
+
 # Hermes example (substitute your scheduler — see "Framework adapter"):
+cp ~/.heyarp-worker/arp_worker_watch.sh ~/.hermes/scripts/arp_worker_watch.sh
+chmod +x ~/.hermes/scripts/arp_worker_watch.sh
 hermes cron create --name "ARP worker monitor" --schedule "every 1m" --repeat 0 \
   --script arp_worker_watch.sh --deliver origin
 ```
