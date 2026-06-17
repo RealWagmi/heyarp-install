@@ -39,7 +39,7 @@ The order logic and every `heyarp` / bash / python snippet below are **universal
 | **Recurring wake** — run the watchdog every ~1m, re-invoking an agent session | `hermes cron create … --deliver origin`                                       | your scheduler / cron that re-invokes an agent each tick |
 | **Spawn a subagent** — a separate, isolated session per order                 | `delegate_task`                                                               | your sub-session / subagent spawn                        |
 | **Background run + notify on completion** — for long `--wait`s                | `terminal(background=true, notify_on_complete=true)`                          | your background-exec-with-callback                       |
-| **State directory** — the dedup / heartbeat files                             | `~/.arp-worker/` (override via `$ARP_WORKER_SEEN` / `$ARP_WORKER_DISPATCHED`) | any writable dir                                         |
+| **State directory** — the dedup / heartbeat files                             | `~/.heyarp-worker/` (override via `$ARP_WORKER_SEEN` / `$ARP_WORKER_DISPATCHED`) | any writable dir                                         |
 
 Everything else — the watchdog script, the `NEW`/`STALL`/`DONE` line protocol, the dedup files, all `heyarp` commands — is plain POSIX shell + `heyarp` and runs unchanged on any framework.
 
@@ -64,8 +64,8 @@ Three line kinds it emits:
 #   $DISPATCHED  — append-only "delegationId<TAB>epoch"; latest epoch per id wins.
 #                  Written on (re)dispatch AND refreshed by the live subagent as a HEARTBEAT.
 export PATH="$HOME/.npm-global/bin:$PATH"
-SEEN="${ARP_WORKER_SEEN:-$HOME/.arp-worker/seen.txt}"
-DISPATCHED="${ARP_WORKER_DISPATCHED:-$HOME/.arp-worker/dispatched.txt}"
+SEEN="${ARP_WORKER_SEEN:-$HOME/.heyarp-worker/seen.txt}"
+DISPATCHED="${ARP_WORKER_DISPATCHED:-$HOME/.heyarp-worker/dispatched.txt}"
 STALL_MIN="${ARP_WORKER_STALL_MIN:-5}"
 mkdir -p "$(dirname "$SEEN")"; touch "$SEEN" "$DISPATCHED"
 
@@ -116,7 +116,7 @@ for d in rows:
 ```
 
 ```bash
-chmod +x ~/.arp-worker/arp_worker_watch.sh
+chmod +x ~/.heyarp-worker/arp_worker_watch.sh
 # Register it with your framework's recurring scheduler so it re-invokes an agent
 # session every ~1 minute, INDEFINITELY (unlike the buyer's bounded per-order poll).
 # Hermes example (substitute your scheduler — see "Framework adapter"):
@@ -189,7 +189,7 @@ Notes:
 - The settleable on-chain lock states are `created` → `in_progress` → `submitted` → `paid`; the server delegation shows `locked` once the lock is confirmed — that is normal, not an error.
 - Long waits (>10 min): run the `--wait` in the background with notify-on-completion (Hermes example: `terminal(background=true, notify_on_complete=true, timeout=600)`; map to your framework — see "Framework adapter" and `../buyer/SKILL.md` § Background execution). **While waiting, heartbeat** so the monitor knows you are alive (otherwise the health-check re-dispatches you after STALL_MIN):
   ```bash
-  printf '%s\t%s\n' "<delegation-id>" "$(date +%s)" >> "${ARP_WORKER_DISPATCHED:-$HOME/.arp-worker/dispatched.txt}"
+  printf '%s\t%s\n' "<delegation-id>" "$(date +%s)" >> "${ARP_WORKER_DISPATCHED:-$HOME/.heyarp-worker/dispatched.txt}"
   ```
   Refresh it once at the start of each step and roughly every few minutes during a long wait.
 

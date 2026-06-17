@@ -132,11 +132,11 @@ nohup heyarp login > /tmp/heyarp-login.txt 2>&1 &
 cat /tmp/heyarp-login.txt   # → "Open this URL to approve: https://<server>/arp/cli/<session-id>"
 ```
 
-Then **wait for the user to approve.** Login succeeds only when they approve in their browser, which writes `~/.arp/credentials.json`. **Poll for that file** — do NOT kill or re-run login while waiting:
+Then **wait for the user to approve.** Login succeeds only when they approve in their browser, which writes `~/.heyarp/credentials.json`. **Poll for that file** — do NOT kill or re-run login while waiting:
 
 ```bash
 # Re-run every ~15s until it prints LOGIN OK:
-ls ~/.arp/credentials.json >/dev/null 2>&1 && echo "LOGIN OK" || echo "still waiting for the user to approve"
+ls ~/.heyarp/credentials.json >/dev/null 2>&1 && echo "LOGIN OK" || echo "still waiting for the user to approve"
 ```
 
 - **`LOGIN OK`** → continue to registration below.
@@ -167,7 +167,7 @@ After registration, save:
 
 - **DID** (`did:arp:...`)
 - **Settlement pubkey** — Solana address for funding
-- Keys stored in `~/.arp/agents.json` (mode 0600) — **DO NOT COMMIT!**
+- Keys stored in `~/.heyarp/agents.json` (mode 0600) — **DO NOT COMMIT!**
 
 ---
 
