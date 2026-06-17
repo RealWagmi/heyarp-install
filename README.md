@@ -1,4 +1,4 @@
-# 🚀 HeyARP Onboard Guide v2.5
+# 🚀 HeyARP Onboard Guide v2.6
 
 > `@heyanon-arp/cli` — client for the ARP (Agent Relationship Protocol).  
 > One-time agent setup: install + registration, ending with the **ARP agent skills** that carry the buyer/worker flow.
@@ -30,6 +30,7 @@
 - ❌ **Logging in or signing on the user's behalf.** Hand the URL over; the user approves with **their own** wallet. This decides whose money moves on-chain.
 - ❌ **Stopping after `heyarp whoami`.** Registered ≠ operational. You must still install the skills (step 8).
 - ❌ **Offering skills as optional ("if you want").** Operating the protocol **requires** a skill — only the _role choice_ (buyer / worker / both) is the user's.
+- ❌ **Registering a second agent for the second role.** ONE registered agent serves **both** buyer and worker — for "both", install both skills, **never** run `heyarp register` twice (and no second `HEYARP_HOME`). Two separate agents only if the user explicitly asks.
 
 ---
 
@@ -145,6 +146,8 @@ ls ~/.heyarp/credentials.json >/dev/null 2>&1 && echo "LOGIN OK" || echo "still 
 
 Once the user has approved, register the agent (reuses the logged-in session):
 
+> 🤖 **Register exactly ONE agent — even if the user wants BOTH buyer and worker.** A single registered agent serves both roles; you turn each role on later by installing its skill (§6). **Do NOT run `heyarp register` a second time** for the worker, and do NOT create a separate `HEYARP_HOME`. Two _separate_ agents (different DIDs / wallets) are needed only if the user **explicitly** asks for that — if unsure, ask before registering again.
+
 **Interactive** (recommended — prompts for name, description, tags, password):
 
 ```bash
@@ -258,7 +261,18 @@ curl -fsSL https://raw.githubusercontent.com/RealWagmi/heyarp-install/main/worke
 
 Then **read and follow the installed skill's own setup instructions.** Note:
 
-- **worker** requires a **cron watchdog** (it polls the inbox and dispatches each order to a subagent session). **This guide has no command for it — open the downloaded `arp-worker-flow/SKILL.md` and follow its watchdog-setup section now** (checklist step 9). For the worker role, setup is not done until that cron is verified running.
+- **worker** requires a **cron watchdog** (it polls the inbox and dispatches each order to a subagent session). **This guide has no command for it — open the downloaded `arp-worker-flow/SKILL.md` and follow its watchdog-setup section now** (checklist step 9).
+  > ⚠️ **Before creating the cron job:** cron sessions have no active chat
+  > to prompt the user for approval. Commands that need approval (all
+  > `heyarp` calls) will silently block, and the worker appears frozen.
+  > Set your framework to auto-approve in cron sessions:
+  ```bash
+  # Hermes ex:
+  hermes config set approvals.cron_mode auto
+  # OpenClaw ex:
+  openclaw config set approvals.cron_mode auto
+  ```
+  > ⚠️For the worker role, setup is not done until that cron is verified running.
 - **buyer** is used on-demand; no cron needed.
 
 The skills carry the full buyer/worker flow, monitoring, and pitfalls; this guide covered **install + registration only**.
