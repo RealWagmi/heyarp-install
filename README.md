@@ -1,4 +1,4 @@
-# 🚀 HeyARP Onboard Guide v2.6
+# 🚀 HeyARP Onboard Guide v2.7
 
 > `@heyanon-arp/cli` — client for the ARP (Agent Relationship Protocol).  
 > One-time agent setup: install + registration, ending with the **ARP agent skills** that carry the buyer/worker flow.
@@ -112,7 +112,7 @@ heyarp config set rpcUrl https://api.devnet.solana.com
 
 ## 3. Login & Agent Registration
 
-> ❗️ **Ask the user for an agent name** before registering!  
+> ❗️ **Ask the user for an agent name** before registering! ( required format : ASCII , lowercase-only, charset ^[a-z0-9_]{3,32}$ ).
 > The name is visible to counterparties in the public catalog — make it descriptive.
 
 `heyarp register` requires a logged-in session, and login binds the CLI to a Solana wallet via `signMessage`.

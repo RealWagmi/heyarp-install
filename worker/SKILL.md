@@ -179,22 +179,22 @@ This is safe: the subagent first **reads the current state and resumes** (§3b) 
 
 Mirror of the buyer flow, "my-turn" side. Wait for the buyer's moves with the same `--wait --until` / background+notify mechanics as `../buyer/SKILL.md` (§ Monitoring + § Background execution).
 
-| Step                                             | Command                                                                                                                           | Then wait for                                                                            |
-| ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| Accept delegation (off-chain)                    | `heyarp delegation accept <rel-id> <delegation-id>`                                                                               | `status --wait --until delegation.locked` (buyer funds; on-chain `create_lock` confirms) |
-| **Accept the lock (ON-CHAIN — stakes lamports)** | `heyarp escrow accept <delegation-id>`                                                                                            | `status --wait --until work.requested` (buyer sends the task)                            |
-| Read the task                                    | `heyarp work-list <rel-id> --verbose --full-ids` → `requestParams`                                                                | —                                                                                        |
-| **Produce the deliverable**                      | the agent's actual service (translate / analyse / etc.) over `requestParams` → write JSON to `/tmp/arp_out.json`                  | —                                                                                        |
-| Respond                                          | `heyarp work respond <rel-id> <delegation-id> <request-id> --output-file /tmp/arp_out.json`                                       | —                                                                                        |
-| **Submit work (ON-CHAIN)**                       | `heyarp escrow submit-work <delegation-id>`                                                                                       | — (InProgress → Submitted; starts the buyer's review window)                             |
-| Propose receipt                                  | `heyarp receipt propose <buyer-did> <delegation-id> --auto-hashes --rel-id <rel-id> --request-id <request-id> --verdict accepted` | `status --wait --until cycle.released` (buyer claims → funds released to you)            |
+| Step                                             | Command                                                                                                                                                                              | Then wait for                                                                            |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------- |
+| Accept delegation (off-chain)                    | `heyarp delegation accept <rel-id> <delegation-id>`                                                                                                                                  | `status --wait --until delegation.locked` (buyer funds; on-chain `create_lock` confirms) |
+| **Accept the lock (ON-CHAIN — stakes lamports)** | `heyarp escrow accept <delegation-id>`                                                                                                                                               | `status --wait --until work.requested` (buyer sends the task)                            |
+| Read the task                                    | `heyarp work-list <rel-id> --verbose --full-ids` → `requestParams` | —                                                                                        |
+| **Produce the deliverable**                      | the agent's actual service (translate / analyse / etc.) over `requestParams` → write JSON to `/tmp/arp_out.json`                                                                     | —                                                                                        |
+| Respond                                          | `heyarp work respond <rel-id> <delegation-id> <request-id> --output-file /tmp/arp_out.json`                                                                                          | —                                                                                        |
+| **Submit work (ON-CHAIN)**                       | `heyarp escrow submit-work <delegation-id>`                                                                                                                                          | — (InProgress → Submitted; starts the buyer's review window)                             |
+| Propose receipt                                  | `heyarp receipt propose <buyer-did> <delegation-id> --auto-hashes --rel-id <rel-id> --request-id <request-id> --verdict accepted`                                                    | `status --wait --until cycle.released` (buyer claims → funds released to you)            |
 
 Notes:
 
 - You **stake lamports** at `escrow accept` (returned to you when the buyer claims) — keep SOL for the stake + tx fees even on SPL-priced jobs.
 - On-chain actions (`escrow accept` / `submit-work`) resolve the RPC from `--rpc-url` / `ARP_ESCROW_RPC_URL` / `heyarp config get rpcUrl`; the program id auto-discovers from the server (pin with `--program-id`).
 - If the buyer never claims, you can **self-claim** once the review window lapses: `heyarp escrow claim <delegation-id>`.
-- The settleable on-chain lock states are `created` → `in_progress` → `submitted` → `paid`; the server delegation shows `locked` once the lock is confirmed — that is normal, not an error.
+- The settleable on-chain lock states are `created` → `in_progress` → `submitted` → `paid`; a buyer dispute (`escrow dispute open`, inside the review window) adds the non-terminal `disputing`, which ends at `dispute_resolved` (operator ruled) or `dispute_closed` (window lapsed, either party closed — see §5). The server delegation shows `locked` once the lock is confirmed (and `refunded` if the dispute unwinds) — that is normal, not an error.
 - Long waits (>10 min): run the `--wait` in the background with notify-on-completion (Hermes example: `terminal(background=true, notify_on_complete=true, timeout=600)`; map to your framework — see "Framework adapter" and `../buyer/SKILL.md` § Background execution). **While waiting, heartbeat** so the monitor knows you are alive (otherwise the health-check re-dispatches you after STALL_MIN):
   ```bash
   printf '%s\t%s\n' "<delegation-id>" "$(date +%s)" >> "${ARP_WORKER_DISPATCHED:-$HOME/.heyarp-worker/dispatched.txt}"
@@ -207,7 +207,7 @@ A subagent can be interrupted and re-spawned. **Never assume a step ran — read
 
 | Step                            | Re-runnable?                       | Guard before running                                                                      |
 | ------------------------------- | ---------------------------------- | ----------------------------------------------------------------------------------------- |
-| `delegation accept`             | ✅ yes (no-op if already accepted) | —                                                                                         |
+| `delegation accept`             | ✅ safe — but **errors** `DELEGATION_INVALID_STATE` if already past `offered` (harmless; treat as "already accepted") | — |
 | `escrow accept` (on-chain)      | ❌ NO                              | `heyarp escrow show <delegation-id> --json` → only if `state` is `created`                |
 | `work respond`                  | ❌ NO                              | `heyarp work-list <rel-id> --json` → only if that `requestId`'s state is `requested`      |
 | `escrow submit-work` (on-chain) | ❌ NO                              | `heyarp escrow show <delegation-id> --json` → only if `state` is `in_progress`            |
@@ -230,8 +230,9 @@ case "$STATE" in
     responded) echo "already responded — skip" ;;
     *)         echo "state unknown/unexpected ('${STATE:-read-failed}') — exit for re-dispatch"; exit 1 ;;
 esac
-# On-chain steps follow the same shape (state via `heyarp escrow show <del> --json`):
-# act on the §3a precondition, skip if already past it, unknown read → exit 1 (never skip).
+# On-chain steps follow the same shape (state via `heyarp escrow show <delegation-id> --json`):
+# act on the §3a precondition; states PAST it (`submitted` / `disputing` / `paid` / `dispute_resolved` / `dispute_closed` / `revoked`)
+# mean "already done" → skip (for `disputing`, poll instead — see §5); only a failed/garbage read → exit 1.
 ```
 
 ### 3b. Resume after a restart
@@ -239,11 +240,11 @@ esac
 A re-spawned subagent (from a `STALL` re-dispatch, §2b) recovers from its `delegationId` + `relationshipId` — it does NOT start over:
 
 1. `heyarp delegations <rel-id> --json` → server delegation state.
-2. `heyarp escrow show <delegation-id> --json` → on-chain lock state (`created` / `in_progress` / `submitted` / `paid`).
+2. `heyarp escrow show <delegation-id> --json` → on-chain lock state (`created` / `in_progress` / `submitted` / `disputing` / `paid` / `dispute_resolved` / `dispute_closed` / `revoked`; a dispute that unwinds (`dispute_closed`) projects to delegation `refunded`).
 3. `heyarp work-list <rel-id> --json` + `heyarp receipts <rel-id> --json` → work / receipt state.
 4. Jump to the **next pending** step; skip everything already done (use the §3a guards); then continue with the normal `--wait-until` waits.
 
-State → next step: delegation `offered` → `delegation accept` · `accepted` → wait `delegation.locked` · `locked` + lock `created` → `escrow accept` · lock `in_progress` + work-log `requested` → produce + `work respond` · work-log `responded` + lock `in_progress` → `escrow submit-work` · lock `submitted`, no receipt → `receipt propose` · receipt `proposed` → wait `cycle.released`. This is what makes re-dispatch safe.
+State → next step: delegation `offered` → `delegation accept` · `accepted` → wait `delegation.locked` · `locked` + lock `created` → `escrow accept` · lock `in_progress` + work-log `requested` → produce + `work respond` · work-log `responded` + lock `in_progress` → `escrow submit-work` · lock `submitted`, no receipt → `receipt propose` · receipt `proposed` → wait `cycle.released` · lock `disputing` → see §5 (poll, or `escrow dispute close` after the window lapses). This is what makes re-dispatch safe.
 
 ## 4. Security (worker side)
 
@@ -257,19 +258,26 @@ State → next step: delegation `offered` → `delegation accept` · `accepted` 
 
 ## 5. Troubleshooting — common worker failures
 
-| Symptom                                                                            | Likely cause                                                 | Fix                                                                                                                          |
-| ---------------------------------------------------------------------------------- | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
-| Delegation stuck at `offered`                                                      | subagent crashed before `delegation accept`                  | health-check re-dispatches after STALL_MIN; new subagent accepts (§2b, §3b)                                                  |
-| Delegation stuck at `accepted`                                                     | subagent died after accept / buyer slow to fund              | if alive it heartbeats (not flagged); if dead, re-dispatched → resumes waiting for `delegation.locked`, then `escrow accept` |
-| `locked` + on-chain lock `created`                                                 | subagent crashed before the on-chain `escrow accept` (stake) | re-dispatched; new subagent reads on-chain state and runs `escrow accept` (§3a guard)                                        |
-| `locked` + work-log `requested`, no response                                       | subagent crashed before `work respond`                       | re-dispatched; new subagent reads state, produces output, responds (§3a)                                                     |
-| work-log `responded` + lock `in_progress`                                          | subagent crashed before the on-chain `escrow submit-work`    | re-dispatched; new subagent runs `escrow submit-work` (§3a guard)                                                            |
-| work-log `responded` + lock `submitted`, no receipt                                | subagent crashed before `receipt propose`                    | re-dispatched; new subagent proposes the receipt                                                                             |
-| Delegation `canceled`                                                              | buyer timed out waiting for the response                     | `DONE` cleanup frees the relationship; the buyer's next delegation works (§2a)                                               |
-| Two orders from one buyer, second ignored                                          | dedup keyed by relationship instead of delegation            | dedup is per delegationId (§2d) — the two delegationIds progress independently                                               |
-| `work respond` fails "already responded"                                           | a re-dispatch raced the old subagent                         | guard with a state read before responding (§3a); the failure is harmless                                                     |
-| Required step silently skipped (`submit-work` never ran; lock stuck `in_progress`) | guard's state read flapped → empty `$STATE` → skipped        | §3a: retry the read; skip only if state is past the step; unknown read → `exit 1` (re-dispatch)                              |
-| Subagent delivers wrong/poor output                                                | LLM error, not infrastructure                                | buyer disputes via a follow-up work_request (see `../buyer/SKILL.md` § attack/dispute)                                       |
+| Symptom | Likely cause | Fix |
+| --- | --- | --- |
+| Delegation stuck at `offered` | subagent crashed before `delegation accept` | health-check re-dispatches after STALL_MIN; new subagent accepts (§2b, §3b) |
+| Delegation stuck at `accepted` | subagent died after accept / buyer slow to fund | if alive it heartbeats (not flagged); if dead, re-dispatched → resumes waiting for `delegation.locked`, then `escrow accept` |
+| `locked` + on-chain lock `created` | subagent crashed before the on-chain `escrow accept` (stake) | re-dispatched; new subagent reads on-chain state and runs `escrow accept` (§3a guard) |
+| `locked` + work-log `requested`, no response | subagent crashed before `work respond` | re-dispatched; new subagent reads state, produces output, responds (§3a) |
+| work-log `responded` + lock `in_progress` | subagent crashed before the on-chain `escrow submit-work` | re-dispatched; new subagent runs `escrow submit-work` (§3a guard) |
+| work-log `responded` + lock `submitted`, no receipt | subagent crashed before `receipt propose` | re-dispatched; new subagent proposes the receipt |
+| Delegation `canceled` | buyer timed out waiting for the response | `DONE` cleanup frees the relationship; the buyer's next delegation works (§2a) |
+| Two orders from one buyer, second ignored | dedup keyed by relationship instead of delegation | dedup is per delegationId (§2d) — the two delegationIds progress independently |
+| `work respond` fails "already responded" | a re-dispatch raced the old subagent | guard with a state read before responding (§3a); the failure is harmless |
+| Required step silently skipped (`submit-work` never ran; lock stuck `in_progress`) | guard's state read flapped → empty `$STATE` → skipped | §3a: retry the read; skip only if state is past the step; unknown read → `exit 1` (re-dispatch) |
+| Subagent delivers wrong/poor output | LLM error, not infrastructure | content complaint — off-chain follow-up work_request (`../buyer/SKILL.md` § attack/dispute); distinct from the on-chain escrow `disputing` rows below |
+| `work-list` with `--verbose --json` fails "mutually exclusive" | `--verbose` and `--json` are mutually exclusive on `work-list`/`delegations`/`receipts` | use `--verbose` (full `requestParams` dump) or `--json` (programmatic parsing), never both |
+| `work respond` fails "request … not found in relationship" | the request-id positional got a JSON object `{"requestId":"…"}` instead of the bare UUID string | pass the request-id as a plain UUID (e.g. `16204424-…`), not a JSON object; if you store it in a file, write only the bare UUID — no braces/quotes/key |
+| `delegation accept` retry shows `DELEGATION_INVALID_STATE` | a retry re-ran `delegation accept` after the delegation already advanced past `offered` | harmless idempotency probe: it just confirms the delegation is past `offered`; if `state` is `accepted`/`locked`, skip to the next step (§3a) |
+| `--wait --until cycle.released` times out (exit 124; default `--wait-timeout` 300s) | buyer hasn't claimed; the review window hasn't expired | not an error — the buyer owns the next move; once the review deadline passes (`heyarp escrow show <delegation-id> --json`), self-claim with `heyarp escrow claim <delegation-id>` (§3 Notes) |
+| handler reads the wrong delegation state (e.g. `completed` instead of `offered`), silently exits | `heyarp delegations <rel-id> --json` returns ALL delegations for the relationship as an array; taking the first row without a `delegationId` filter often picks a previous completed order | filter by id: `next((d for d in json.load(sys.stdin) if d.get("delegationId")==DEL_ID), {})` — same as the §3a guard / buyer §4 (also for `work-list`) |
+| on-chain lock state is `disputing` — handler doesn't recognize it | buyer opened an on-chain dispute (`escrow dispute open`, inside the review window) | `disputing` is non-terminal; keep heartbeating and polling — the operator rules (→ `dispute_resolved`: payee-wins pays you, payer-wins refunds the buyer) or the window lapses (→ `dispute_closed`); do not treat it as terminal or exit the wait loop |
+| on-chain lock stuck in `disputing`, expired, operator never resolved | dispute window lapsed with no operator ruling | either party may run `heyarp escrow dispute close <delegation-id>` after the window lapses — escrow returns to the buyer and BOTH stakes return (you forfeit the payment but recover your stake); lock → `dispute_closed`, delegation → `refunded` (terminal → DONE) |
 
 ## 6. Monitoring methods & FSM phases
 

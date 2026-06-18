@@ -294,7 +294,7 @@ Send a follow-up `work request` in the SAME delegation (same pattern as Step 2, 
 
 ### Option B: Refuse payment
 
-Just not claiming is **not** a clean refund — the worker can self-claim once the review window lapses. Real refund levers: `heyarp escrow cancel <delegation-id>` (only _before_ the worker accepted the lock) or `heyarp escrow claim-expired <delegation-id>` (after the work window lapses with no on-chain submission). Once work is submitted on-chain, recourse is the dispute path — escalate to the user.
+Just not claiming is **not** a clean refund — the worker can self-claim once the review window lapses. Real refund levers: `heyarp escrow cancel <delegation-id>` (only _before_ the worker accepted the lock) or `heyarp escrow claim-expired <delegation-id>` (after the work window lapses with no on-chain submission). Once work is submitted on-chain, recourse is the **on-chain escrow dispute** (distinct from the off-chain content complaint in Option A) — escalate to the user. Open it **INSIDE the review window** with `heyarp escrow dispute open <delegation-id>` (you stake the same lamport amount the worker staked; `submitted` → `disputing`). It then resolves one of two ways: the **operator rules** (`heyarp escrow dispute resolve`, inside the dispute window → lock `dispute_resolved`: `--payer-wins` refunds you, `--payee-wins` pays the worker), or — if the dispute window lapses unresolved — **either party** runs `heyarp escrow dispute close <delegation-id>`: escrow returns to you and **both stakes return** (lock → `dispute_closed`, delegation → `refunded`).
 
 ## Common pitfalls
 
