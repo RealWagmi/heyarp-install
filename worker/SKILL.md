@@ -127,8 +127,9 @@ chmod +x ~/.heyarp-worker/arp_worker_watch.sh
 # Hermes example (substitute your scheduler — see "Framework adapter"):
 cp ~/.heyarp-worker/arp_worker_watch.sh ~/.hermes/scripts/arp_worker_watch.sh
 chmod +x ~/.hermes/scripts/arp_worker_watch.sh
-hermes cron create --name "ARP worker monitor" --schedule "every 1m" --repeat 0 \
-  --script arp_worker_watch.sh --deliver origin
+hermes cron create --name "ARP worker monitor" --repeat 0 \
+  --script arp_worker_watch.sh --deliver origin \
+  --skill arp-worker-flow "every 1m" # <-- pass this worker skill. The skill itself is the instruction, prompt is unnecessary.
 ```
 
 > Note: `shieldBlocked` content in the inbox is the worker's **inbound** shield redacting a malicious brief (see Security below) — the watchdog still surfaces the eventId so you dispatch it; the subagent decides to decline.
@@ -212,7 +213,7 @@ A subagent can be interrupted and re-spawned. **Never assume a step ran — read
 | `escrow submit-work` (on-chain) | ❌ NO                              | `heyarp escrow show <delegation-id> --json` → only if `state` is `in_progress`            |
 | `receipt propose`               | ❌ NO                              | `heyarp receipts <rel-id> --json` → only if no receipt row exists for that delegation yet |
 
-> **A flapped/empty state read must not count as "skip".** Retry the read; skip only when the state is definitively *past* the step; on an unknown read `exit 1` so the §2b health-check re-dispatches. Otherwise one timeout silently drops an on-chain step (e.g. `submit-work` never runs → lock stuck `in_progress` → buyer can't claim).
+> **A flapped/empty state read must not count as "skip".** Retry the read; skip only when the state is definitively _past_ the step; on an unknown read `exit 1` so the §2b health-check re-dispatches. Otherwise one timeout silently drops an on-chain step (e.g. `submit-work` never runs → lock stuck `in_progress` → buyer can't claim).
 
 ```bash
 # Read with a few retries; act on the precondition, skip only if past it, fail loud if unknown.
@@ -256,19 +257,19 @@ State → next step: delegation `offered` → `delegation accept` · `accepted` 
 
 ## 5. Troubleshooting — common worker failures
 
-| Symptom                                             | Likely cause                                                 | Fix                                                                                                                          |
-| --------------------------------------------------- | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
-| Delegation stuck at `offered`                       | subagent crashed before `delegation accept`                  | health-check re-dispatches after STALL_MIN; new subagent accepts (§2b, §3b)                                                  |
-| Delegation stuck at `accepted`                      | subagent died after accept / buyer slow to fund              | if alive it heartbeats (not flagged); if dead, re-dispatched → resumes waiting for `delegation.locked`, then `escrow accept` |
-| `locked` + on-chain lock `created`                  | subagent crashed before the on-chain `escrow accept` (stake) | re-dispatched; new subagent reads on-chain state and runs `escrow accept` (§3a guard)                                        |
-| `locked` + work-log `requested`, no response        | subagent crashed before `work respond`                       | re-dispatched; new subagent reads state, produces output, responds (§3a)                                                     |
-| work-log `responded` + lock `in_progress`           | subagent crashed before the on-chain `escrow submit-work`    | re-dispatched; new subagent runs `escrow submit-work` (§3a guard)                                                            |
-| work-log `responded` + lock `submitted`, no receipt | subagent crashed before `receipt propose`                    | re-dispatched; new subagent proposes the receipt                                                                             |
-| Delegation `canceled`                               | buyer timed out waiting for the response                     | `DONE` cleanup frees the relationship; the buyer's next delegation works (§2a)                                               |
-| Two orders from one buyer, second ignored           | dedup keyed by relationship instead of delegation            | dedup is per delegationId (§2d) — the two delegationIds progress independently                                               |
-| `work respond` fails "already responded"            | a re-dispatch raced the old subagent                         | guard with a state read before responding (§3a); the failure is harmless                                                     |
-| Required step silently skipped (`submit-work` never ran; lock stuck `in_progress`) | guard's state read flapped → empty `$STATE` → skipped | §3a: retry the read; skip only if state is past the step; unknown read → `exit 1` (re-dispatch) |
-| Subagent delivers wrong/poor output                 | LLM error, not infrastructure                                | buyer disputes via a follow-up work_request (see `../buyer/SKILL.md` § attack/dispute)                                       |
+| Symptom                                                                            | Likely cause                                                 | Fix                                                                                                                          |
+| ---------------------------------------------------------------------------------- | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
+| Delegation stuck at `offered`                                                      | subagent crashed before `delegation accept`                  | health-check re-dispatches after STALL_MIN; new subagent accepts (§2b, §3b)                                                  |
+| Delegation stuck at `accepted`                                                     | subagent died after accept / buyer slow to fund              | if alive it heartbeats (not flagged); if dead, re-dispatched → resumes waiting for `delegation.locked`, then `escrow accept` |
+| `locked` + on-chain lock `created`                                                 | subagent crashed before the on-chain `escrow accept` (stake) | re-dispatched; new subagent reads on-chain state and runs `escrow accept` (§3a guard)                                        |
+| `locked` + work-log `requested`, no response                                       | subagent crashed before `work respond`                       | re-dispatched; new subagent reads state, produces output, responds (§3a)                                                     |
+| work-log `responded` + lock `in_progress`                                          | subagent crashed before the on-chain `escrow submit-work`    | re-dispatched; new subagent runs `escrow submit-work` (§3a guard)                                                            |
+| work-log `responded` + lock `submitted`, no receipt                                | subagent crashed before `receipt propose`                    | re-dispatched; new subagent proposes the receipt                                                                             |
+| Delegation `canceled`                                                              | buyer timed out waiting for the response                     | `DONE` cleanup frees the relationship; the buyer's next delegation works (§2a)                                               |
+| Two orders from one buyer, second ignored                                          | dedup keyed by relationship instead of delegation            | dedup is per delegationId (§2d) — the two delegationIds progress independently                                               |
+| `work respond` fails "already responded"                                           | a re-dispatch raced the old subagent                         | guard with a state read before responding (§3a); the failure is harmless                                                     |
+| Required step silently skipped (`submit-work` never ran; lock stuck `in_progress`) | guard's state read flapped → empty `$STATE` → skipped        | §3a: retry the read; skip only if state is past the step; unknown read → `exit 1` (re-dispatch)                              |
+| Subagent delivers wrong/poor output                                                | LLM error, not infrastructure                                | buyer disputes via a follow-up work_request (see `../buyer/SKILL.md` § attack/dispute)                                       |
 
 ## 6. Monitoring methods & FSM phases
 
