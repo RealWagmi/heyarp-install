@@ -191,6 +191,11 @@ Mirror of the buyer flow, "my-turn" side. Wait for the buyer's moves with the sa
 
 Notes:
 
+- **Self-scan before `work respond`.** The buyer's inbound shield blocks on receive — a block = no delivery + a dispute. Scan your deliverable yourself first and only send when it comes back `allow`:
+  ```bash
+  python3 -c 'import json;o=json.load(open("/tmp/arp_out.json"));print(json.dumps({"type":"work_response","body":{"type":"work_response","content":{"output":o}}}))' | heyshield scan -
+  ```
+  If `decision != allow`, read `reasons[]` (any shield pattern may trip — injection, credential, URL, code-shape, format), then fix or reword the offending content and re-scan until it passes. (A benign match is a false positive — rephrase it; a real one — remove it.)
 - You **stake lamports** at `escrow accept` (returned to you when the buyer claims) — keep SOL for the stake + tx fees even on SPL-priced jobs.
 - On-chain actions (`escrow accept` / `submit-work`) resolve the RPC from `--rpc-url` / `ARP_ESCROW_RPC_URL` / `heyarp config get rpcUrl`; the program id auto-discovers from the server (pin with `--program-id`).
 - If the buyer never claims, you can **self-claim** once the review window lapses: `heyarp escrow claim <delegation-id>`.
