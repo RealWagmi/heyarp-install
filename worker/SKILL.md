@@ -192,7 +192,7 @@ Mirror of the buyer flow, "my-turn" side. Wait for the buyer's moves with the sa
 Notes:
 
 - **`work respond` is content-screened on send** — the same checks the buyer applies on receive (L0 injection / format · L2 code-shape · L3 URL-gateway) plus the L4 secret gate. If the deliverable would be blocked it **aborts with `OUTBOUND_BLOCKED` + a `reasons[]` list and nothing is sent** — fix the flagged content and re-run (recoverable, unlike a silent block on the buyer's side). Fix by reason:
-  - `L0b` (injection) — your text matches a prompt-injection signature, usually from **echoing the buyer's brief back** or phrasing like "ignore previous instructions". Reword; don't quote the raw brief.
+  - `L0b` (injection) — your text matches a prompt-injection signature, usually because you **echoed the buyer's brief back verbatim** (the brief itself may carry an injection). Don't quote the raw brief — summarize it.
   - `L2` (code-shape) — code/script flagged as dangerous (e.g. a reverse shell). If the deliverable is *legitimately* code, the work_request must declare it (`expectedFormat: code`/`script`); otherwise remove the executable-looking content.
   - `L0d` (format mismatch) — the payload looks like a different format than the contract asked for; match the requested format.
   - `L3` (URL gateway: `BAD_REDIRECT` / private-address / fetch-fail) — a link redirects unsafely or hits a private address; remove or replace it.
