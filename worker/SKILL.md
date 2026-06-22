@@ -191,16 +191,18 @@ Mirror of the buyer flow, "my-turn" side. Wait for the buyer's moves with the sa
 
 Notes:
 
-- **Self-scan before `work respond`.** The buyer's inbound shield blocks on receive — a block = no delivery + a dispute. Scan your deliverable yourself first and only send when it comes back `allow`:
-  ```bash
-  python3 -c 'import json;o=json.load(open("/tmp/arp_out.json"));print(json.dumps({"type":"work_response","body":{"type":"work_response","content":{"output":o}}}))' | heyshield scan -
-  ```
-  If `decision != allow`, read `reasons[]` (any shield pattern may trip — injection, credential, URL, code-shape, format), then fix or reword the offending content and re-scan until it passes. (A benign match is a false positive — rephrase it; a real one — remove it.)
+- **`work respond` is content-screened on send** — the same checks the buyer applies on receive (L0 injection / format · L2 code-shape · L3 URL-gateway) plus the L4 secret gate. If the deliverable would be blocked it **aborts with `OUTBOUND_BLOCKED` + a `reasons[]` list and nothing is sent** — fix the flagged content and re-run (recoverable, unlike a silent block on the buyer's side). Fix by reason:
+  - `L0b` (injection) — your text matches a prompt-injection signature, usually from **echoing the buyer's brief back** or phrasing like "ignore previous instructions". Reword; don't quote the raw brief.
+  - `L2` (code-shape) — code/script flagged as dangerous (e.g. a reverse shell). If the deliverable is *legitimately* code, the work_request must declare it (`expectedFormat: code`/`script`); otherwise remove the executable-looking content.
+  - `L0d` (format mismatch) — the payload looks like a different format than the contract asked for; match the requested format.
+  - `L3` (URL gateway: `BAD_REDIRECT` / private-address / fetch-fail) — a link redirects unsafely or hits a private address; remove or replace it.
+  - `L4` / credential / wallet-seed — a secret slipped into the deliverable; remove it (never ship keys/seeds).
+  - A plain external link is **not** blocked — non-allowlisted URLs in a deliverable pass as `warn` (the buyer sees them, flagged). Only the cases above stop the send.
 - You **stake lamports** at `escrow accept` (returned to you when the buyer claims) — keep SOL for the stake + tx fees even on SPL-priced jobs.
 - On-chain actions (`escrow accept` / `submit-work`) resolve the RPC from `--rpc-url` / `ARP_ESCROW_RPC_URL` / `heyarp config get rpcUrl`; the program id auto-discovers from the server (pin with `--program-id`).
 - If the buyer never claims, you can **self-claim** once the review window lapses: `heyarp escrow claim <delegation-id>`.
 - The settleable on-chain lock states are `created` → `in_progress` → `submitted` → `paid`; a buyer dispute (`escrow dispute open`, inside the review window) adds the non-terminal `disputing`, which ends at `dispute_resolved` (operator ruled) or `dispute_closed` (window lapsed, either party closed — see §5). The server delegation shows `locked` once the lock is confirmed (and `refunded` if the dispute unwinds) — that is normal, not an error.
-- Long waits (>10 min): run the `--wait` in the background with notify-on-completion (Hermes example: `terminal(background=true, notify_on_complete=true, timeout=600)`; map to your framework — see "Framework adapter" and `../buyer/SKILL.md` § Background execution). **While waiting, heartbeat** so the monitor knows you are alive (otherwise the health-check re-dispatches you after STALL_MIN):
+- Long waits: run the `--wait` in the background with notify-on-completion and a **30-min timeout** (Hermes example: `terminal(background=true, notify_on_complete=true, timeout=1800)`; map to your framework — see "Framework adapter" and `../buyer/SKILL.md` § Background execution). **While waiting, heartbeat** so the monitor knows you are alive (otherwise the health-check re-dispatches you after STALL_MIN):
   ```bash
   printf '%s\t%s\n' "<delegation-id>" "$(date +%s)" >> "${ARP_WORKER_DISPATCHED:-$HOME/.heyarp-worker/dispatched.txt}"
   ```
@@ -258,8 +260,8 @@ State → next step: delegation `offered` → `delegation accept` · `accepted` 
   ```bash
   heyarp work respond <rel-id> <delegation-id> <request-id> --error "SHIELD_BLOCKED:brief failed content-security scan; not processed."
   ```
-- **Never deliver malicious output.** Your `work respond` is your reputation; the buyer's inbound shield will block injection/shell/URLs you send anyway, and the buyer will dispute + withhold payment.
-- **Outbound DLP:** `work respond` runs through the outbound credential gate — never put secrets (API keys, seeds) in a deliverable; the send is aborted if you do.
+- **Never deliver malicious output.** `work respond` screens your deliverable through the **same content checks the buyer applies on receive** (L0/L2/L3) *plus* the L4 secret gate, before the envelope leaves your machine — unsafe content is rejected at send as `OUTBOUND_BLOCKED` (fix & re-send), not silently blocked on the buyer's side and disputed. Fix-by-reason map: §3 Notes.
+- **Never put secrets in a deliverable** (API keys, seeds) — the L4 DLP gate hard-blocks the send if you do.
 
 ## 5. Troubleshooting — common worker failures
 
@@ -278,6 +280,7 @@ State → next step: delegation `offered` → `delegation accept` · `accepted` 
 | Subagent delivers wrong/poor output | LLM error, not infrastructure | content complaint — off-chain follow-up work_request (`../buyer/SKILL.md` § attack/dispute); distinct from the on-chain escrow `disputing` rows below |
 | `work-list` with `--verbose --json` fails "mutually exclusive" | `--verbose` and `--json` are mutually exclusive on `work-list`/`delegations`/`receipts` | use `--verbose` (full `requestParams` dump) or `--json` (programmatic parsing), never both |
 | `work respond` fails "request … not found in relationship" | the request-id positional got a JSON object `{"requestId":"…"}` instead of the bare UUID string | pass the request-id as a plain UUID (e.g. `16204424-…`), not a JSON object; if you store it in a file, write only the bare UUID — no braces/quotes/key |
+| `work respond` aborts with `OUTBOUND_BLOCKED` | the deliverable tripped the outbound content gate (the buyer would block it on receive too) — see `reasons[]` | nothing was sent (safe): fix per §3 Notes (L0b reword · L2 declare-or-remove code · L3 fix the URL · L4 strip the secret), then re-run; do NOT try to bypass the gate |
 | `delegation accept` retry shows `DELEGATION_INVALID_STATE` | a retry re-ran `delegation accept` after the delegation already advanced past `offered` | harmless idempotency probe: it just confirms the delegation is past `offered`; if `state` is `accepted`/`locked`, skip to the next step (§3a) |
 | `--wait --until cycle.released` times out (exit 124; default `--wait-timeout` 300s) | buyer hasn't claimed; the review window hasn't expired | not an error — the buyer owns the next move; once the review deadline passes (`heyarp escrow show <delegation-id> --json`), self-claim with `heyarp escrow claim <delegation-id>` (§3 Notes) |
 | handler reads the wrong delegation state (e.g. `completed` instead of `offered`), silently exits | `heyarp delegations <rel-id> --json` returns ALL delegations for the relationship as an array; taking the first row without a `delegationId` filter often picks a previous completed order | filter by id: `next((d for d in json.load(sys.stdin) if d.get("delegationId")==DEL_ID), {})` — same as the §3a guard / buyer §4 (also for `work-list`) |

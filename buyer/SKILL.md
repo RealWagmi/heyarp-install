@@ -59,7 +59,7 @@ heyarp delegation offer did:arp:<worker-did> \
   --title "..." --scope "..." \
   --amount "0.001" --currency SOL:solana-devnet \
   --criterion "..." --deadline "<RFC3339>" \
-  --wait-until delegation.accepted --wait-timeout 600 --wait-verbose
+  --wait-until delegation.accepted --wait-timeout 1800 --wait-verbose
 ```
 
 > For an SPL token (e.g. devnet USDC) use `--currency USDC:solana-devnet`.
@@ -133,7 +133,7 @@ heyarp work request did:arp:<worker-did> "$DELEGATION_ID" \
   --request-id "<unique-id>" --params-file /tmp/arp_params.json
 ```
 
-Wait: `heyarp status <rel-id> --wait --until work.responded --wait-timeout 600 --wait-verbose`
+Wait: `heyarp status <rel-id> --wait --until work.responded --wait-timeout 1800 --wait-verbose`
 
 ### 9. Review work
 
@@ -142,10 +142,12 @@ heyarp work-list <rel-id> --verbose --full-ids
 # Check responseOutput — show user before approving!
 ```
 
+> 🛡️ **Shield verdicts on the deliverable:** a `warn` (e.g. a non-allowlisted link in the result) means the content is **visible but flagged** — show the user, don't blindly follow links. A `shieldBlocked` marker (`block`/`quarantine`) means the content was **withheld** as malicious — do NOT approve / `escrow claim`; treat it as a bad deliverable (dispute or send a follow-up work_request for a clean re-delivery).
+
 ### 10. Wait for receipt
 
 ```bash
-heyarp status <rel-id> --wait --until receipt.proposed --wait-timeout 600 --wait-verbose
+heyarp status <rel-id> --wait --until receipt.proposed --wait-timeout 1800 --wait-verbose
 ```
 
 Get receipt details:
@@ -188,14 +190,14 @@ heyarp wallet verify-release --delegation-id "$DELEGATION_ID" --json
 
 ## Background execution for long waits
 
-When foreground timeout would exceed 600s, use:
+For any wait longer than a couple of minutes (or beyond your foreground limit), run it in the background with a **30-min timeout**:
 
 ```python
 terminal(
-    command="heyarp status <rel-id> --wait --until <phase> --wait-timeout 600 --wait-verbose",
+    command="heyarp status <rel-id> --wait --until <phase> --wait-timeout 1800 --wait-verbose",
     background=true,
     notify_on_complete=true,
-    timeout=600
+    timeout=1800
 )
 ```
 
@@ -258,7 +260,7 @@ heyarp work request did:arp:<worker> <delegation-id> \
   --params-file /tmp/arp_dispute.json
 
 # Wait for response
-heyarp status <rel-id> --wait --until work.responded --wait-timeout 600 --wait-verbose
+heyarp status <rel-id> --wait --until work.responded --wait-timeout 1800 --wait-verbose
 ```
 
 ### Step 3: Evaluate the worker's response
