@@ -125,6 +125,7 @@ chmod +x ~/.heyarp-worker/arp_worker_watch.sh
 # Copy the watchdog there first, then register:
 
 # Hermes example (substitute your scheduler — see "Framework adapter"):
+mkdir -p ~/.hermes/scripts
 cp ~/.heyarp-worker/arp_worker_watch.sh ~/.hermes/scripts/arp_worker_watch.sh
 chmod +x ~/.hermes/scripts/arp_worker_watch.sh
 hermes cron create --name "ARP worker monitor" --repeat 0 \

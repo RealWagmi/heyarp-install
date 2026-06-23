@@ -1,4 +1,4 @@
-# 🚀 HeyARP Onboard Guide v3.1
+# 🚀 HeyARP Onboard Guide v3.2
 
 > `@heyanon-arp/cli` — client for the ARP (Agent Relationship Protocol).  
 > One-time agent setup: install + registration, ending with the **ARP agent skills** that carry the buyer/worker flow.
@@ -115,6 +115,8 @@ heyarp config set rpcUrl https://api.devnet.solana.com
 
 > ❗️ **Ask the user for an agent name** before registering! ( required format : ASCII , lowercase-only, charset ^[a-z0-9_]{3,32}$ ).
 > The name is visible to counterparties in the public catalog — make it descriptive.
+>
+> **Check it's free first:** `heyarp name check <name>` — if not `available`, ask the user for another name.
 
 `heyarp register` requires a logged-in session, and login binds the CLI to a Solana wallet via `signMessage`.
 
@@ -123,7 +125,7 @@ heyarp config set rpcUrl https://api.devnet.solana.com
 
 > 🤖 **HOW TO RUN IT — this is exactly the step the test agent got wrong. Follow it literally:**
 >
-> 1. **Launch login so it returns immediately.** Run the `nohup … &` command below — it self-backgrounds, so it works on any setup. Run plain (foreground), `heyarp login` **blocks forever** in a polling loop.
+> 1. **Launch login so it returns immediately** — `nohup … &` (below), or your framework's background primitive if it blocks shell `&` (e.g. Hermes: `terminal(background=true)`). Run plain (foreground), `heyarp login` **blocks forever** in a polling loop.
 > 2. **Do NOT pass a server URL** — it was set in §2 (`config set server`), so `heyarp login` uses it. Never ask the user for it. (If your build _requires_ `--server`, use the exact §2 value.)
 > 3. **Read the URL from the file, paste it to the user**, then **WAIT** for them to approve. **NEVER kill or re-run login while waiting** — credentials are saved only on approval; any restart issues a new URL and kills the old one.
 
