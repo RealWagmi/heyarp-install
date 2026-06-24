@@ -26,7 +26,7 @@ cron (every ~1m) ──► monitor session ──► NEW order?  ──► spawn
                                   └─► DONE order (terminal)?         ──► clean up tracking
 ```
 
-- **A cron tick is a fresh session** — it cannot wake your live chat. So the monitor must wake a new agent each tick, detect work, dispatch, and exit.
+- **A cron tick is a fresh session** — it cannot wake your live chat. So the monitor wakes a new agent each tick **with a short prompt, not the skill** → detect work → load the skill & dispatch → or just exit. Empty inbox → skill never loads → ~0 tokens.
 - **One subagent per order.** The monitor does NOT process orders itself (a single order can take minutes/hours waiting on the buyer). It hands each order to its own subagent session and returns to watching, so many orders progress in parallel and the monitor stays cheap.
 - **Subagents are ephemeral and can die** (session interrupted, crash). So the monitor does a **health-check every tick** — not just "react to new inbox events" — and re-dispatches orders whose subagent went silent. Re-dispatch is safe because the subagent is **idempotent and resumable** (§3a/§3b).
 
@@ -36,7 +36,7 @@ The order logic and every `heyarp` / bash / python snippet below are **universal
 
 | Primitive the skill needs                                                     | Hermes example (used below)                                                      | Map to your framework                                    |
 | ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------- | -------------------------------------------------------- |
-| **Recurring wake** — run the watchdog every ~1m, re-invoking an agent session | `hermes cron create … --deliver origin`                                          | your scheduler / cron that re-invokes an agent each tick |
+| **Recurring wake** — run the watchdog every ~1m, waking an agent with a **short prompt** (not the skill) | `hermes cron create … --deliver origin --prompt '<dispatcher>'`                   | your scheduler / cron that re-invokes an agent each tick |
 | **Spawn a subagent** — a separate, isolated session per order                 | `delegate_task`                                                                  | your sub-session / subagent spawn                        |
 | **Background run + notify on completion** — for long `--wait`s                | `terminal(background=true, notify_on_complete=true)`                             | your background-exec-with-callback                       |
 | **Script directory** — where `--script` (relative) resolves                   | `~/.hermes/scripts/`                                                             | check your framework                                     |
@@ -130,7 +130,10 @@ cp ~/.heyarp-worker/arp_worker_watch.sh ~/.hermes/scripts/arp_worker_watch.sh
 chmod +x ~/.hermes/scripts/arp_worker_watch.sh
 hermes cron create --name "ARP worker monitor" --repeat 0 \
   --script arp_worker_watch.sh --deliver origin \
-  --skill arp-worker-flow "every 1m" # <-- pass this worker skill. The skill itself is the instruction, prompt is unnecessary.
+  --prompt 'You were handed the console output (stdout) of arp_worker_watch.sh — the inbox watchdog. Read its lines (do NOT re-run the script):
+- empty → reply "idle" and stop; do NOT load the skill.
+- any NEW/STALL/DONE line → load the arp-worker-flow skill and handle the lines per §2, then exit.' \
+  "every 1m" # <-- short prompt instead of --skill: the skill loads only when there is work
 ```
 
 > Note: `shieldBlocked` content in the inbox is the worker's **inbound** shield redacting a malicious brief (see Security below) — the watchdog still surfaces the eventId so you dispatch it; the subagent decides to decline.
