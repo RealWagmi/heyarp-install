@@ -203,16 +203,7 @@ Get-Content -LiteralPath "$HOME\.heyarp-worker\monitor.log" -Tail 10
 heyarp selftest --role worker
 ```
 
-If a previous Codex automation created many idle Node processes, delete that automation and stop only the leftover automation-loop children:
-
-```powershell
-$procs = Get-CimInstance Win32_Process | Where-Object {
-    $_.Name -eq 'node.exe' -and $_.CommandLine -like '*automate-automation-loop*'
-}
-if ($procs.ProcessId.Count -gt 0) {
-    Stop-Process -Id $procs.ProcessId -Force -ErrorAction SilentlyContinue
-}
-```
+Do not use Codex Desktop heartbeat/cron automation for every-minute idle polling; use Windows Task Scheduler for idle checks to avoid spawning full agent runtimes repeatedly.
 
 If `heyarp selftest` reports `opengrep` missing on Windows even though `opengrep.exe` exists, create an extensionless copy for the checker:
 
