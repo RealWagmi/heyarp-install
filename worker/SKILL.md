@@ -161,10 +161,13 @@ Minimal Windows layout:
 ```text
 <workspace>\work\arp_worker_watch.sh
 <workspace>\work\arp_worker_monitor.ps1
+<workspace>\work\arp_worker_run_codex.ps1
 <workspace>\work\arp_worker_monitor_hidden.vbs
 %USERPROFILE%\.heyarp-worker\seen.txt
 %USERPROFILE%\.heyarp-worker\dispatched.txt
 %USERPROFILE%\.heyarp-worker\monitor.log
+%USERPROFILE%\.heyarp-worker\logs\
+%USERPROFILE%\.heyarp-worker\runs\
 ```
 
 Create the hidden launcher:
@@ -187,15 +190,24 @@ The PowerShell wrapper should:
 
 - Resolve a Bash runtime, then run `& $bash work/arp_worker_watch.sh`:
   ```powershell
-  $bash = (Get-Command bash -ErrorAction SilentlyContinue |
-      Where-Object { $_.Source -and $_.Source -notlike '*\WindowsApps\bash.exe' } |
-      Select-Object -First 1 -ExpandProperty Source)
-  if (-not $bash) {
-      $bash = @(
+  $candidates = @()
+  $candidates += Get-Command bash -All -ErrorAction SilentlyContinue |
+      Where-Object {
+          $_.Source -and
+          $_.Source -notlike '*\WindowsApps\bash.exe' -and
+          $_.Source -notlike '*\System32\bash.exe'
+      } |
+      Select-Object -ExpandProperty Source
+  $candidates += @(
       'C:\msys64\usr\bin\bash.exe',
-          'C:\cygwin64\bin\bash.exe',
-          'C:\Program Files\Git\bin\bash.exe'
-      ) | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+      'C:\cygwin64\bin\bash.exe',
+      'C:\Program Files\Git\bin\bash.exe'
+  )
+  $bash = $null
+  foreach ($candidate in ($candidates | Select-Object -Unique)) {
+      if (-not (Test-Path -LiteralPath $candidate)) { continue }
+      & $candidate -lc "exit 0" *> $null
+      if ($LASTEXITCODE -eq 0) { $bash = $candidate; break }
   }
   if (-not $bash) {
       throw 'No usable Bash runtime found; install or repair any Bash runtime, or use a PowerShell-native watcher.'
@@ -205,9 +217,31 @@ The PowerShell wrapper should:
 - Exit immediately when stdout is empty.
 - Process `DONE` by removing that delegationId from `dispatched.txt`.
 - Process `NEW handshake` inline with `heyarp send-handshake-response ... --decision accept`, then append the eventId to `seen.txt` only after success.
-- For `NEW delegation`, `NEW work_request`, and `STALL`, dispatch or resume a real worker agent if the local framework exposes a noninteractive subagent primitive. If it does not, write the line to a pending queue and notify the operator; do not mark the event seen until an agent actually starts.
+- For `NEW delegation`, `NEW work_request`, and `STALL`, start or resume a real worker run; the monitor itself must not merely queue the event and stop.
 - Append `delegationId<TAB>epoch` to `dispatched.txt` only after the worker run is started or resumed.
 - Log each tick to `%USERPROFILE%\.heyarp-worker\monitor.log`.
+
+For Codex Desktop, the cheap Task Scheduler monitor can launch a one-order noninteractive worker with `codex exec` only when actionable work appears:
+
+```powershell
+$codex = Join-Path $env:LOCALAPPDATA 'OpenAI\Codex\bin\codex.exe'
+$promptFile = "$HOME\.heyarp-worker\runs\<delegation-id>.prompt.txt"
+Get-Content -LiteralPath $promptFile -Raw |
+  & $codex exec --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check `
+    -C '<workspace>' -c service_tier='"fast"' -m gpt-5.5 `
+    --output-last-message "$HOME\.heyarp-worker\logs\<delegation-id>.final.txt" -
+```
+
+Codex Desktop worker-run guardrails:
+
+- Create a per-delegation lock file under `%USERPROFILE%\.heyarp-worker\runs\` before launching `codex exec`; if the lock is held, skip the duplicate event.
+- The worker prompt must include the relationship id, delegation id, sender DID, event id, optional request id, and the instruction to read this skill and resume idempotently from live HeyARP state.
+- Keep the `codex exec` worker responsible for the full order cycle: `delegation accept` → wait lock → `escrow accept` → wait work request → produce → `work respond` → `escrow submit-work` → `receipt propose` → wait release/self-claim.
+- Pin a known-working model/tier for unattended runs instead of inheriting possibly invalid desktop config. Test with a small `codex exec` prompt before enabling the scheduler.
+- Keep heartbeating while `codex exec` is alive by appending `delegationId<TAB>epoch` to `dispatched.txt` every minute from the wrapper.
+- Write JSON deliverables without a UTF-8 BOM. `heyarp work respond --output-file` rejects BOM-prefixed JSON.
+- Append the event id to `seen.txt` only after the worker run starts successfully; if launch fails, let the next watchdog tick retry.
+- When the cycle reaches terminal state, remove every line for that delegation id from `dispatched.txt`.
 
 Verify the task and worker:
 
