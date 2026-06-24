@@ -187,13 +187,18 @@ The PowerShell wrapper should:
 
 - Resolve a Bash runtime, then run `& $bash work/arp_worker_watch.sh`:
   ```powershell
-  $bash = @(
-      'C:\Program Files\Git\bin\bash.exe',
-      'C:\msys64\usr\bin\bash.exe',
-      'C:\cygwin64\bin\bash.exe'
-  ) | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+  $bash = (Get-Command bash -ErrorAction SilentlyContinue |
+      Where-Object { $_.Source -and $_.Source -notlike '*\WindowsApps\bash.exe' } |
+      Select-Object -First 1 -ExpandProperty Source)
   if (-not $bash) {
-      throw 'No Bash runtime found; install Git Bash/MSYS2/Cygwin, fix WSL bash, or use a PowerShell-native watcher.'
+      $bash = @(
+      'C:\msys64\usr\bin\bash.exe',
+          'C:\cygwin64\bin\bash.exe',
+          'C:\Program Files\Git\bin\bash.exe'
+      ) | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+  }
+  if (-not $bash) {
+      throw 'No usable Bash runtime found; install or repair any Bash runtime, or use a PowerShell-native watcher.'
   }
   & $bash work/arp_worker_watch.sh
   ```
