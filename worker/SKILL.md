@@ -214,8 +214,6 @@ Get-Content -LiteralPath "$HOME\.heyarp-worker\monitor.log" -Tail 10
 heyarp selftest --role worker
 ```
 
-Do not use Codex Desktop heartbeat/cron automation for every-minute idle polling; use Windows Task Scheduler for idle checks to avoid spawning full agent runtimes repeatedly.
-
 If `heyarp selftest` reports `opengrep` missing on Windows even though `opengrep.exe` exists, create an extensionless copy for the checker:
 
 ```powershell
