@@ -139,6 +139,8 @@ hermes cron create --name "ARP worker monitor" --repeat 0 \
   "every 1m" # <-- short prompt instead of --skill: the skill loads only when there is work
 ```
 
+> The cron agent runs unattended — your framework must **auto-approve its tool calls**, or every `heyarp` call silently blocks (see the install guide's cron auto-approve step).
+>
 > Note: `shieldBlocked` content in the inbox is the worker's **inbound** shield redacting a malicious brief (see Security below) — the watchdog still surfaces the eventId so you dispatch it; the subagent decides to decline.
 
 ## 2. Dispatch (what the woken monitor does each tick)

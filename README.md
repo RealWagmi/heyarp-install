@@ -1,4 +1,4 @@
-# 🚀 HeyARP Onboard Guide v3.2
+# 🚀 HeyARP Onboard Guide v3.3
 
 > `@heyanon-arp/cli` — client for the ARP (Agent Relationship Protocol).  
 > One-time agent setup: install + registration, ending with the **ARP agent skills** that carry the buyer/worker flow.
@@ -290,9 +290,10 @@ Then **read and follow the installed skill's own setup instructions.** Note:
   > Set your framework to auto-approve in cron sessions:
   ```bash
   # Hermes ex:
-  hermes config set approvals.cron_mode auto
-  # OpenClaw ex:
-  openclaw config set approvals.cron_mode auto
+  hermes config set approvals.cron_mode approve
+  # OpenClaw ex (also raise the exec host's approvals file askFallback to "full"):
+  openclaw config set tools.exec.security full
+  openclaw config set tools.exec.ask off
   ```
   > ⚠️For the worker role, setup is not done until that cron is verified running.
 - **buyer** is used on-demand; no cron needed.
