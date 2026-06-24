@@ -149,7 +149,7 @@ On Windows, keep the universal watchdog above, but do not assume plain `bash`, `
 
 Use these Windows-specific guardrails:
 
-- Run shell snippets through Git Bash explicitly: `C:\Program Files\Git\bin\bash.exe`.
+- Use a real Bash runtime for shell snippets, such as Git Bash, MSYS2, Cygwin, or WSL with `/bin/bash` installed. Detect it first; if no Bash runtime is available, install one or use a PowerShell-native watcher instead.
 - Prefer `python` over `python3` in the watchdog if `python3` resolves to the Microsoft Store shim.
 - Do not use Codex Desktop heartbeat/cron automation for every-minute idle polling. In practice it can start a full Codex/Node runtime per tick; if idle ticks do not exit cleanly, memory usage grows quickly.
 - Use Windows Task Scheduler for the cheap recurring watchdog. Only wake a full agent when the watchdog emits `NEW`, `STALL`, or `DONE`.
@@ -185,7 +185,18 @@ schtasks /Create /TN $taskName /TR $tr /SC MINUTE /MO 1 /F
 
 The PowerShell wrapper should:
 
-- Run `& 'C:\Program Files\Git\bin\bash.exe' work/arp_worker_watch.sh`.
+- Resolve a Bash runtime, then run `& $bash work/arp_worker_watch.sh`:
+  ```powershell
+  $bash = @(
+      'C:\Program Files\Git\bin\bash.exe',
+      'C:\msys64\usr\bin\bash.exe',
+      'C:\cygwin64\bin\bash.exe'
+  ) | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+  if (-not $bash) {
+      throw 'No Bash runtime found; install Git Bash/MSYS2/Cygwin, fix WSL bash, or use a PowerShell-native watcher.'
+  }
+  & $bash work/arp_worker_watch.sh
+  ```
 - Exit immediately when stdout is empty.
 - Process `DONE` by removing that delegationId from `dispatched.txt`.
 - Process `NEW handshake` inline with `heyarp send-handshake-response ... --decision accept`, then append the eventId to `seen.txt` only after success.
