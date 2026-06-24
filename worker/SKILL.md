@@ -128,8 +128,11 @@ chmod +x ~/.heyarp-worker/arp_worker_watch.sh
 mkdir -p ~/.hermes/scripts
 cp ~/.heyarp-worker/arp_worker_watch.sh ~/.hermes/scripts/arp_worker_watch.sh
 chmod +x ~/.hermes/scripts/arp_worker_watch.sh
+# For the cron agent, enable only the minimally necessary toolset (below) — NOT the default
+# 'hermes-cli' (all 19 tools); this roughly halves the per-tick system prompt. (Flag per your Hermes.)
 hermes cron create --name "ARP worker monitor" --repeat 0 \
   --script arp_worker_watch.sh --deliver origin \
+  --enabled-toolsets terminal,delegate_task,skill_view,process,read_file,write_file \
   --prompt 'You were handed the console output (stdout) of arp_worker_watch.sh — the inbox watchdog. Read its lines (do NOT re-run the script):
 - empty → reply "idle" and stop; do NOT load the skill.
 - any NEW/STALL/DONE line → load the arp-worker-flow skill and handle the lines per §2, then exit.' \
