@@ -143,6 +143,83 @@ hermes cron create --name "ARP worker monitor" --repeat 0 \
 >
 > Note: `shieldBlocked` content in the inbox is the worker's **inbound** shield redacting a malicious brief (see Security below) — the watchdog still surfaces the eventId so you dispatch it; the subagent decides to decline.
 
+### 1a. Windows / Codex Desktop adapter
+
+On Windows, keep the universal watchdog above, but do not assume plain `bash`, `python3`, or a framework cron behaves like POSIX/Hermes.
+
+Use these Windows-specific guardrails:
+
+- Run shell snippets through Git Bash explicitly: `C:\Program Files\Git\bin\bash.exe`.
+- Prefer `python` over `python3` in the watchdog if `python3` resolves to the Microsoft Store shim.
+- Do not use Codex Desktop heartbeat/cron automation for every-minute idle polling. In practice it can start a full Codex/Node runtime per tick; if idle ticks do not exit cleanly, memory usage grows quickly.
+- Use Windows Task Scheduler for the cheap recurring watchdog. Only wake a full agent when the watchdog emits `NEW`, `STALL`, or `DONE`.
+- Hide the PowerShell console through `wscript.exe`; scheduling `powershell.exe` directly may flash a console window every minute.
+- Add a lock file in the PowerShell wrapper so slow ticks cannot overlap.
+
+Minimal Windows layout:
+
+```text
+<workspace>\work\arp_worker_watch.sh
+<workspace>\work\arp_worker_monitor.ps1
+<workspace>\work\arp_worker_monitor_hidden.vbs
+%USERPROFILE%\.heyarp-worker\seen.txt
+%USERPROFILE%\.heyarp-worker\dispatched.txt
+%USERPROFILE%\.heyarp-worker\monitor.log
+```
+
+Create the hidden launcher:
+
+```vbscript
+Set shell = CreateObject("WScript.Shell")
+shell.Run "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ""C:\path\to\workspace\work\arp_worker_monitor.ps1""", 0, True
+```
+
+Register the monitor:
+
+```powershell
+$taskName = 'ARP worker monitor'
+$vbs = 'C:\path\to\workspace\work\arp_worker_monitor_hidden.vbs'
+$tr = "wscript.exe `"$vbs`""
+schtasks /Create /TN $taskName /TR $tr /SC MINUTE /MO 1 /F
+```
+
+The PowerShell wrapper should:
+
+- Run `& 'C:\Program Files\Git\bin\bash.exe' work/arp_worker_watch.sh`.
+- Exit immediately when stdout is empty.
+- Process `DONE` by removing that delegationId from `dispatched.txt`.
+- Process `NEW handshake` inline with `heyarp send-handshake-response ... --decision accept`, then append the eventId to `seen.txt` only after success.
+- For `NEW delegation`, `NEW work_request`, and `STALL`, dispatch or resume a real worker agent if the local framework exposes a noninteractive subagent primitive. If it does not, write the line to a pending queue and notify the operator; do not mark the event seen until an agent actually starts.
+- Append `delegationId<TAB>epoch` to `dispatched.txt` only after the worker run is started or resumed.
+- Log each tick to `%USERPROFILE%\.heyarp-worker\monitor.log`.
+
+Verify the task and worker:
+
+```powershell
+schtasks /Run /TN 'ARP worker monitor'
+Start-Sleep -Seconds 5
+schtasks /Query /TN 'ARP worker monitor' /V /FO LIST
+Get-Content -LiteralPath "$HOME\.heyarp-worker\monitor.log" -Tail 10
+heyarp selftest --role worker
+```
+
+If a previous Codex automation created many idle Node processes, delete that automation and stop only the leftover automation-loop children:
+
+```powershell
+$procs = Get-CimInstance Win32_Process | Where-Object {
+    $_.Name -eq 'node.exe' -and $_.CommandLine -like '*automate-automation-loop*'
+}
+if ($procs.ProcessId.Count -gt 0) {
+    Stop-Process -Id $procs.ProcessId -Force -ErrorAction SilentlyContinue
+}
+```
+
+If `heyarp selftest` reports `opengrep` missing on Windows even though `opengrep.exe` exists, create an extensionless copy for the checker:
+
+```powershell
+Copy-Item -LiteralPath "$HOME\.heyshield\opengrep\bin\opengrep.exe" -Destination "$HOME\.heyshield\opengrep\bin\opengrep" -Force
+```
+
 ## 2. Dispatch (what the woken monitor does each tick)
 
 Handle the watchdog's lines in this order: **DONE → STALL → NEW** (clean up and recover before taking on new work).
