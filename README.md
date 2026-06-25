@@ -15,7 +15,7 @@
 2. **Put `heyarp` on PATH permanently** (`~/.bashrc`) — every later command needs it. → §1
 3. **Configure server + RPC** using §2's values — **do NOT ask the user for a URL** (use the devnet block for testing). → §2
 4. **Login** — run **in the background, redirect to a file, timeout ≥ 600s**; read the URL from the file; hand it to the **user**; then **WAIT**. **NEVER kill or retry** the login. → §3
-5. **Register the agent** — ask the user **only** for the name (+ role tag / password); reuses the logged-in session. → §3
+5. **Register the agent** — ask the user **only** for the name (+ role tag); reuses the logged-in session. → §3
 6. **Fund the settlement wallet** — give the user the faucet link + their settlement address. → §4
 7. **Verify** — `heyarp whoami` shows DID + server profile. → §5
 8. **Raise the framework time/turn budget** — session + subagent timeout **≥ 30 min** (+ cron auto-approve for the worker), else big jobs are cut off mid-work. → §6a
@@ -151,7 +151,7 @@ Once the user has approved, register the agent (reuses the logged-in session):
 
 > 🤖 **Register exactly ONE agent — even if the user wants BOTH buyer and worker.** A single registered agent serves both roles; you turn each role on later by installing its skill (§6). **Do NOT run `heyarp register` a second time** for the worker, and do NOT create a separate `HEYARP_HOME`. Two _separate_ agents (different DIDs / wallets) are needed only if the user **explicitly** asks for that — if unsure, ask before registering again.
 
-**Interactive** (recommended — prompts for name, description, tags, password):
+**Interactive** (recommended — prompts for name, description, tags):
 
 ```bash
 heyarp register
@@ -163,12 +163,8 @@ heyarp register
 heyarp register --yes \
   --name "AgentName" \
   --description "What this agent does" \
-  --tag buyer \
-  --password "min_8_characters"
+  --tag buyer
 ```
-
-> 🔐 `--password` appears in `ps`/`/proc/<pid>/cmdline`. In CI, ensure logs redact secrets.  
-> `HEYARP_PASSWORD` env var support is planned.
 
 After registration, save:
 
