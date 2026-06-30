@@ -1,4 +1,4 @@
-# 🚀 HeyARP Onboard Guide v3.4
+# 🚀 HeyARP Onboard Guide v3.4 — macOS
 
 > `@heyanon-arp/cli` — client for the ARP (Agent Relationship Protocol).  
 > One-time agent setup: install + registration, ending with the **ARP agent skills** that carry the buyer/worker flow.
@@ -12,7 +12,7 @@
 > Work this list top to bottom — each step links to its section (§).
 
 1. **Install** — `curl … | bash` with a command **timeout ≥ 600s** (opengrep is a ~40 MB download). → §1
-2. **Put `heyarp` on PATH permanently** (`~/.bashrc`) — every later command needs it. → §1
+2. **Put `heyarp` on PATH permanently** (`~/.zshrc` — macOS default shell) — every later command needs it. → §1
 3. **Configure server + RPC** using §2's values — **do NOT ask the user for a URL** (use the devnet block for testing). → §2
 4. **Login** — run **in the background, redirect to a file, timeout ≥ 600s**; read the URL from the file; hand it to the **user**; then **WAIT**. **NEVER kill or retry** the login. → §3
 5. **Register the agent** — ask the user **only** for the name (+ role tag); reuses the logged-in session. → §3
@@ -58,15 +58,15 @@ The L2 CodeShield engine — `opengrep`, a single self-contained binary (~40 MB,
 curl -fsSL https://raw.githubusercontent.com/RealWagmi/heyarp-install/main/install.sh | bash
 ```
 
-> ⚠️ **PATH trap:** When npm installs to a user-level prefix (`~/.npm-global`), `heyarp` is NOT automatically on PATH. After the one-liner, **immediately** add it:
+> ⚠️ **PATH trap:** the global npm prefix (so `heyarp`'s bin dir) varies by setup — Homebrew, nvm, or a user-level `~/.npm-global` — and `heyarp` is often NOT automatically on PATH. After the one-liner, **immediately** add it (`$(npm prefix -g)` resolves to whichever prefix you have):
 >
 > ```bash
-> export PATH="$HOME/.npm-global/bin:$PATH"
-> # Make it permanent:
-> grep -q 'npm-global/bin' ~/.bashrc 2>/dev/null || echo 'export PATH="$HOME/.npm-global/bin:$PATH"' >> ~/.bashrc
+> export PATH="$(npm prefix -g)/bin:$PATH"
+> # Make it permanent (macOS default shell is zsh):
+> grep -q 'npm prefix -g' ~/.zshrc 2>/dev/null || echo 'export PATH="$(npm prefix -g)/bin:$PATH"' >> ~/.zshrc
 > ```
 >
-> **Every command in this guide assumes `heyarp` is on PATH.** If your shell does **not** persist environment between calls (many agent runtimes don't — and editing `~/.bashrc` alone won't help, since non-interactive shells may not read it), prepend `export PATH="$HOME/.npm-global/bin:$PATH"; ` to **every** `heyarp` command below.
+> **Every command in this guide assumes `heyarp` is on PATH.** If your shell does **not** persist environment between calls (many agent runtimes don't — and editing `~/.zshrc` alone won't help, since non-interactive shells may not read it), prepend `export PATH="$(npm prefix -g)/bin:$PATH"; ` to **every** `heyarp` command below.
 
 > Served from the [`RealWagmi/heyarp-install`](https://github.com/RealWagmi/heyarp-install) repo. (A custom domain can be used instead of the raw GitHub URL.)
 
@@ -80,7 +80,7 @@ sudo npm install -g @heyanon-arp/cli
 
 ```bash
 npm config set prefix ~/.npm-global
-echo 'export PATH="$HOME/.npm-global/bin:$PATH"' >> ~/.bashrc
+echo 'export PATH="$HOME/.npm-global/bin:$PATH"' >> ~/.zshrc
 export PATH="$HOME/.npm-global/bin:$PATH"
 npm install -g @heyanon-arp/cli
 ```

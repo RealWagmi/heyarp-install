@@ -93,6 +93,25 @@ else
 	c_ok "heyarp installed under $USER_PREFIX."
 fi
 
+# ---- 2b. PATH (macOS) -------------------------------------------------------
+# macOS default shell is zsh, and the global npm prefix (nvm / Homebrew / a
+# custom prefix) is frequently NOT on a non-login shell's PATH. A *successful*
+# `npm install -g` then leaves `heyarp` invisible (command not found). Detect
+# that, put the bin dir on PATH for the rest of this run, and remember to tell
+# the user how to persist it (step 4). `npm bin -g` was removed in npm 9, so we
+# derive the bin dir from `npm prefix -g`. Build NPM_BIN only from a non-empty
+# prefix so it can never degenerate to the literal "/bin".
+NPM_PREFIX="$(npm prefix -g 2>/dev/null || echo '')"
+NPM_BIN=""
+PATH_HAD_BIN=1
+if [ -n "$NPM_PREFIX" ]; then
+	NPM_BIN="$NPM_PREFIX/bin"
+	case ":$PATH:" in
+		*":$NPM_BIN:"*) ;;
+		*) PATH_HAD_BIN=0; export PATH="$NPM_BIN:$PATH" ;;
+	esac
+fi
+
 # ---- 3. Install the opengrep L2 engine (explicit, sha256-verified) ---------
 if [ "${HEYSHIELD_SKIP_OPENGREP_INSTALL:-}" = "1" ]; then
 	c_info "HEYSHIELD_SKIP_OPENGREP_INSTALL=1 — skipping the L2 engine."
@@ -123,8 +142,11 @@ fi
 printf '\n'
 c_ok "Installation complete. Verify with:  heyarp -h"
 if [ -n "$USER_PREFIX" ]; then
-	c_warn "Add this to your shell profile so 'heyarp' stays on PATH:"
+	c_warn "Add this to your shell profile (macOS: ~/.zshrc) so 'heyarp' stays on PATH:"
 	printf '    export PATH="%s/bin:$PATH"\n' "$USER_PREFIX" >&2
+elif [ "$PATH_HAD_BIN" = 0 ]; then
+	c_warn "'heyarp' installed to a dir not on your PATH. Add to ~/.zshrc, then restart your shell:"
+	printf '    export PATH="%s:$PATH"\n' "$NPM_BIN" >&2
 fi
 printf '\n'
 c_info "================================================================"

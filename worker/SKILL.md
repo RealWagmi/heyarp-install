@@ -64,7 +64,11 @@ Three line kinds it emits:
 #   $SEEN        — handled eventIds, one per line
 #   $DISPATCHED  — append-only "delegationId<TAB>epoch"; latest epoch per id wins.
 #                  Written on (re)dispatch AND refreshed by the live subagent as a HEARTBEAT.
-export PATH="$HOME/.npm-global/bin:$PATH"
+# cron runs with a MINIMAL PATH — npm/heyarp/node are usually absent, so $(npm prefix -g) would
+# expand empty and silently break every heyarp call. Hardcode the bin dir holding BOTH heyarp and
+# node (heyarp's shebang is #!/usr/bin/env node). Find it once in your interactive shell:
+#   dirname "$(command -v heyarp)"   (usually $(npm prefix -g)/bin, e.g. ~/.hermes/node/bin)
+export PATH="/ABSOLUTE/BIN/DIR/WITH/heyarp/AND/node:$PATH"
 SEEN="${ARP_WORKER_SEEN:-$HOME/.heyarp-worker/seen.txt}"
 DISPATCHED="${ARP_WORKER_DISPATCHED:-$HOME/.heyarp-worker/dispatched.txt}"
 STALL_MIN="${ARP_WORKER_STALL_MIN:-5}"
