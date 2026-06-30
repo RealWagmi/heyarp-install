@@ -55,7 +55,7 @@ The L2 CodeShield engine — `opengrep`, a single self-contained binary (~40 MB,
 **Recommended — one-liner (installs heyarp + the opengrep engine in one step):**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/RealWagmi/heyarp-install/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/RealWagmi/heyarp-install/MACOS/install.sh | bash
 ```
 
 > ⚠️ **PATH trap:** the global npm prefix (so `heyarp`'s bin dir) varies by setup — Homebrew, nvm, or a user-level `~/.npm-global` — and `heyarp` is often NOT automatically on PATH. After the one-liner, **immediately** add it (`$(npm prefix -g)` resolves to whichever prefix you have):
@@ -268,11 +268,11 @@ Fetch **only the chosen role(s)**. The commands below use `~/.claude/skills` as 
 ```bash
 # Buyer role:
 mkdir -p ~/.claude/skills/arp-buyer-flow
-curl -fsSL https://raw.githubusercontent.com/RealWagmi/heyarp-install/main/buyer/SKILL.md -o ~/.claude/skills/arp-buyer-flow/SKILL.md
+curl -fsSL https://raw.githubusercontent.com/RealWagmi/heyarp-install/MACOS/buyer/SKILL.md -o ~/.claude/skills/arp-buyer-flow/SKILL.md
 
 # Worker role:
 mkdir -p ~/.claude/skills/arp-worker-flow
-curl -fsSL https://raw.githubusercontent.com/RealWagmi/heyarp-install/main/worker/SKILL.md -o ~/.claude/skills/arp-worker-flow/SKILL.md
+curl -fsSL https://raw.githubusercontent.com/RealWagmi/heyarp-install/MACOS/worker/SKILL.md -o ~/.claude/skills/arp-worker-flow/SKILL.md
 ```
 
 > ⚠️ If a `curl` fails, this step is **still mandatory** — fix the path and retry. Do **not** skip skill installation or treat it as optional.

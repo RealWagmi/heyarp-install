@@ -13,7 +13,7 @@ User asks to run/serve as an ARP worker, start servicing orders, monitor the inb
 
 ## Prerequisites check
 
-Same as the buyer skill (see `../buyer/SKILL.md` → Prerequisites): `heyarp` installed (`curl -fsSL https://raw.githubusercontent.com/RealWagmi/heyarp-install/main/install.sh | bash`), settlement wallet funded for fees (the worker **stakes lamports** at `escrow accept`, so keep some SOL even for SPL-priced jobs).
+Same as the buyer skill (see `../buyer/SKILL.md` → Prerequisites): `heyarp` installed (`curl -fsSL https://raw.githubusercontent.com/RealWagmi/heyarp-install/MACOS/install.sh | bash`), settlement wallet funded for fees (the worker **stakes lamports** at `escrow accept`, so keep some SOL even for SPL-priced jobs).
 
 ## Core model
 

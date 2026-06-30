@@ -3,7 +3,7 @@
 # HeyARP installer — installs the @heyanon-arp/cli (`heyarp`) agent client and
 # its L2 CodeShield engine (`opengrep`).
 #
-#   curl -fsSL https://raw.githubusercontent.com/RealWagmi/heyarp-install/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/RealWagmi/heyarp-install/MACOS/install.sh | bash
 #
 # Why a script and not an npm postinstall: dependency `postinstall` hooks are
 # unreliable (pnpm 10 blocks them by default, `--ignore-scripts` skips them,

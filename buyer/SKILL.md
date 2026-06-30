@@ -24,7 +24,7 @@ heyarp whoami --local 2>/dev/null  # agent registered?
 If not installed, run the installer:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/RealWagmi/heyarp-install/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/RealWagmi/heyarp-install/MACOS/install.sh | bash
 ```
 
 ## Flow (step by step)
