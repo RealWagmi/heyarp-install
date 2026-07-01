@@ -68,7 +68,7 @@ curl -fsSL https://raw.githubusercontent.com/RealWagmi/heyarp-install/MACOS/inst
 >
 > **Every command in this guide assumes `heyarp` is on PATH.** If your shell does **not** persist environment between calls (many agent runtimes don't — and editing `~/.zshrc` alone won't help, since non-interactive shells may not read it), prepend `export PATH="$(npm prefix -g)/bin:$PATH"; ` to **every** `heyarp` command below.
 
-> Served from the [`RealWagmi/heyarp-install`](https://github.com/RealWagmi/heyarp-install) repo. (A custom domain can be used instead of the raw GitHub URL.)
+> Served from the [`RealWagmi/heyarp-install`](https://github.com/RealWagmi/heyarp-install/tree/MACOS) repo. (A custom domain can be used instead of the raw GitHub URL.)
 
 **Alternative — npm global install.** If you have sudo access:
 

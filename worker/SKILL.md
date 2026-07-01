@@ -156,7 +156,7 @@ Handle the watchdog's lines in this order: **DONE → STALL → NEW** (clean up 
 Remove every line for that delegationId from `$ARP_WORKER_DISPATCHED` so it stops being health-checked:
 
 ```bash
-grep -v "^$DEL"$'\t' "$ARP_WORKER_DISPATCHED" > "$ARP_WORKER_DISPATCHED.tmp" && mv "$ARP_WORKER_DISPATCHED.tmp" "$ARP_WORKER_DISPATCHED"
+{ grep -v "^$DEL"$'\t' "$ARP_WORKER_DISPATCHED" || true; } > "$ARP_WORKER_DISPATCHED.tmp" && mv "$ARP_WORKER_DISPATCHED.tmp" "$ARP_WORKER_DISPATCHED"
 ```
 
 The relationship is now free — the buyer's NEXT order is a new delegationId and dispatches normally. (A `canceled` order, e.g. the buyer timed out waiting, is just cleaned up here; nothing else to do.)
