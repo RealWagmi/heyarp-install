@@ -151,10 +151,13 @@ hermes cron create --name "ARP worker monitor" --repeat 0 \
 # tells the agent to run the watchdog itself (via its exec tool) and act on the output:
 openclaw cron create "every 1m" \
   'Run `bash ~/.heyarp-worker/arp_worker_watch.sh` with your exec tool and act on its stdout per the arp-worker-flow skill §2: DONE → clean up (§2a); STALL → re-dispatch (§2b); NEW handshake → accept inline (§2c); NEW delegation offer / work_request → spawn a sub-agent for that order with `sessions_spawn` ({task: "<order context + run §3>"}). If there are no lines, reply exactly NO_REPLY.' \
-  --name "arp-worker-watch" --session isolated --no-deliver
-# Prereqs: exec must not prompt in unattended runs — on a local gateway the one-liner is
-# `openclaw exec-policy preset yolo` (sets config + the approvals file); then verify with
-# `openclaw cron run <jobId> --wait` and `openclaw cron runs --id <jobId>`.
+  --name "arp-worker-watch" --session isolated --no-deliver --agent arp-worker
+# Prereqs:
+# 1. Create the agent: openclaw agents add arp-worker --non-interactive --workspace ~/.openclaw/workspace-arp-worker
+# 2. Let it run exec unattended — add to the host approvals file:
+#      "agents": { "arp-worker": { "security": "full", "ask": "off", "askFallback": "full" } }
+#    via `openclaw approvals get --gateway > f.json` → edit → `openclaw approvals set --gateway --file f.json`
+# Verify: `openclaw cron run <jobId> --wait`; history: `openclaw cron runs --id <jobId>`.
 ```
 
 > The cron agent runs unattended — your framework must **auto-approve its tool calls**, or every `heyarp` call silently blocks (see the install guide's cron auto-approve step).

@@ -255,7 +255,7 @@ hermes config set max_turns 200
 
 ### ⬇️ 6b. Install the skill(s)
 
-Fetch **only the chosen role(s)**. The commands below use `~/.claude/skills` as the skills directory — **if your runtime uses a different path (e.g. `~/.hermes/skills`), replace `~/.claude/skills` everywhere below.** They create the directory first; without `mkdir -p`, `curl -o` fails with "No such file or directory".
+Fetch **only the chosen role(s)**. The commands below use `~/.claude/skills` as the skills directory — **if your runtime uses a different path (e.g. `~/.hermes/skills`, `~/.openclaw/skills`), replace `~/.claude/skills` everywhere below.** They create the directory first; without `mkdir -p`, `curl -o` fails with "No such file or directory".
 
 > ⚠️ **"Both" roles with ONE agent — do NOT register a second agent.**
 >
@@ -287,11 +287,11 @@ Then **read and follow the installed skill's own setup instructions.** Note:
   ```bash
   # Hermes ex:
   hermes config set approvals.cron_mode approve
-  # OpenClaw ex — local gateway one-liner (sets the config AND the host approvals file, incl. askFallback):
-  openclaw exec-policy preset yolo
-  # (manual alternative: `openclaw config set tools.exec.security full` + `openclaw config set tools.exec.ask off`,
-  #  plus askFallback="full" in the approvals file via `openclaw approvals set`, then `openclaw gateway restart` —
-  #  the config keys alone are NOT enough: an unattended run still blocks on the approvals file's default deny)
+  # OpenClaw ex — grant full exec to the worker's agent only (the cron runs with `--agent arp-worker`, see worker skill §1):
+  openclaw approvals get --gateway > /tmp/approvals.json
+  #   edit: add  "agents": { "arp-worker": { "security": "full", "ask": "off", "askFallback": "full" } }
+  openclaw approvals set --gateway --file /tmp/approvals.json
+  # Host-wide alternative (⚠️ ALL agents & sessions): openclaw exec-policy preset yolo
   ```
   > ⚠️For the worker role, setup is not done until that cron is verified running.
 - **buyer** is used on-demand; no cron needed.
