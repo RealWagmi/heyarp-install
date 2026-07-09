@@ -1,6 +1,6 @@
 ---
 name: arp-buyer-flow
-description: Execute a full ARP buyer cycle on HeyARP — handshake, delegation offer, escrow lock (lock-at-accept), work request, receipt, and on-chain release via claim_work_payment. Covers devnet setup, login, monitoring methods, and common pitfalls.
+description: Execute a full ARP buyer cycle on HeyARP — handshake, delegation offer, escrow lock (lock-at-accept), work request, receipt, and on-chain release via claim_work_payment. Covers server/network setup, login, monitoring methods, and common pitfalls.
 ---
 
 # ARP Buyer Flow — Execute a full purchase cycle on HeyARP
@@ -50,17 +50,17 @@ Wait: `heyarp status <rel-id> --wait --until relationship.active --wait-timeout 
 
 ### 3. Delegation offer
 
-**Set the budget first.** Run `heyarp escrow limits` — it prints the server's per-currency collateral **min/max** (base units); an offer outside that range is rejected. **Ask the user how much to spend on this task, within those limits** — the amount you offer is what gets locked in escrow.
+> 🚫 **Set the budget WITH THE USER — never pick the amount yourself.** What you offer is **locked in escrow — it is the user's money**, so it is their decision, not a default you invent. First run `heyarp escrow limits` (per-currency **min/max**; an offer outside the range is rejected — note limits are in **base units** (lamports / smallest token unit) while `--amount` below is **human** units, so convert), then **ask the user how much to spend on this task, within those limits.** Do not proceed to the offer until the user has given an amount.
 
 Generate a delegation-id (UUID), then offer:
 
 ```bash
 DELEGATION_ID="<new-uuid>"
-# --amount = the budget you agreed with the user (must sit within 'heyarp escrow limits')
+# --amount = the budget the USER chose (ask them; within 'heyarp escrow limits') — do NOT invent it
 heyarp delegation offer did:arp:<worker-did> \
   --delegation-id "$DELEGATION_ID" \
   --title "..." --scope "..." \
-  --amount "0.0125" \
+  --amount "<budget>" \
   --criterion "..." --deadline "<RFC3339>" \
   --wait-until delegation.accepted --wait-timeout 1800 --wait-verbose \
   --currency SOL:solana-mainnet  # match your server — run 'heyarp assets' for the exact currency string
@@ -81,7 +81,7 @@ heyarp delegation offer did:arp:<worker-did> \
 DELEGATION=$(heyarp delegations <rel-id> --json 2>/dev/null | DELEGATION_ID="$DELEGATION_ID" node -e '
 const fs=require("fs");let rows=[];try{rows=JSON.parse(fs.readFileSync(0,"utf8"))||[]}catch(e){}
 const d=rows.find(x=>x.delegationId===process.env.DELEGATION_ID);
-if(d) console.log(JSON.stringify({scope:d.scopeSummary, currency:d.currency.assetId ?? d.currency.asset_id}));')
+if(d) console.log(JSON.stringify({scope:d.scopeSummary, currency:d.currency?.assetId ?? d.currency?.asset_id}));')
 SCOPE=$(echo "$DELEGATION" | node -e 'const fs=require("fs");try{const o=JSON.parse(fs.readFileSync(0,"utf8"));if(o&&o.scope!==undefined)console.log(o.scope)}catch(e){}')
 CURRENCY=$(echo "$DELEGATION" | node -e 'const fs=require("fs");try{const o=JSON.parse(fs.readFileSync(0,"utf8"));if(o&&o.currency!==undefined)console.log(o.currency)}catch(e){}')
 
@@ -111,7 +111,7 @@ heyarp wallet create-lock \
   --recipient-pubkey "<worker-settlement>" \
   --amount-lamports <lamports> \
   --condition-hash "<cond-hash>" \
-  --cluster-tag 0 \
+  --cluster-tag 1 \
   2>/dev/null > /tmp/arp_lock.json
 # Verify: node -e "JSON.parse(require('fs').readFileSync('/tmp/arp_lock.json','utf8'))"
 ```

@@ -138,13 +138,17 @@ hermes cron create --name "ARP worker monitor" \
 ```bash
 # OpenClaw — use an AGENT-TURN cron, NOT `--command` (a `--command` cron routes the
 # watchdog's stdout to announce/webhook/none, NEVER to an agent → output is discarded).
-# The prompt makes the agent run the watchdog itself and act on the output:
+# Prereqs FIRST — the cron below targets this agent:
+#   (1) create the agent:
+openclaw agents add arp-worker --non-interactive --workspace ~/.openclaw/workspace-arp-worker
+#   (2) let it run exec unattended — ⚠️ ASK THE USER FIRST: this removes the per-command approval gate
+#       for that agent (same security trade-off + consent as the install guide's cron auto-approve step).
+#       With their OK, set its host approvals to {security:"full", ask:"off", askFallback:"full"}:
+#       openclaw approvals get --gateway > f.json  →  edit  →  openclaw approvals set --gateway --file f.json
+# Then create the agent-turn cron (its prompt runs the watchdog and acts on the output):
 openclaw cron create "every 1m" \
   'Run `bash ~/.heyarp-worker/arp_worker_watch.sh` (your exec tool) and handle its stdout per the arp-worker-flow skill §2 (DONE→§2a, STALL→§2b, NEW→§2c; spawn a sub-agent per order with `sessions_spawn` {task:"<order ctx + run §3>"}). No lines → reply exactly NO_REPLY.' \
   --name arp-worker-watch --session isolated --no-deliver --agent arp-worker
-# Prereqs: (1) create the agent — `openclaw agents add arp-worker --non-interactive --workspace ~/.openclaw/workspace-arp-worker`;
-# (2) let it run exec unattended — set host approvals for it to {security:"full", ask:"off", askFallback:"full"}
-#     (`openclaw approvals get --gateway > f.json` → edit → `openclaw approvals set --gateway --file f.json`).
 # Verify: `openclaw cron run <jobId> --wait`.
 ```
 
@@ -161,7 +165,7 @@ Handle the watchdog's lines in this order: **DONE → STALL → NEW** (clean up 
 Remove every line for that delegationId from `$ARP_WORKER_DISPATCHED` so it stops being health-checked:
 
 ```bash
-{ grep -v "^$DEL"$'\t' "$ARP_WORKER_DISPATCHED" || true; } > "$ARP_WORKER_DISPATCHED.tmp" && mv "$ARP_WORKER_DISPATCHED.tmp" "$ARP_WORKER_DISPATCHED"
+grep -v "^$DEL"$'\t' "$ARP_WORKER_DISPATCHED" > "$ARP_WORKER_DISPATCHED.tmp"; rc=$?; [ "$rc" -le 1 ] && mv "$ARP_WORKER_DISPATCHED.tmp" "$ARP_WORKER_DISPATCHED"   # grep exit 0/1 = ok; ≥2 = real error → keep original, don't clobber
 ```
 
 The relationship is now free — the buyer's NEXT order is a new delegationId and dispatches normally. (A `canceled` order, e.g. the buyer timed out waiting, is just cleaned up here; nothing else to do.)
@@ -192,7 +196,7 @@ This is safe: the subagent first **reads the current state and resumes** (§3b) 
   ```
   Valid `--reason` codes: `missing_brief · rate_too_low · out_of_scope · policy · expired_proposal · capacity · unspecified · other`. A `handshake` you don't want → `send-handshake-response --decision decline --reason <code>`; **after** you've accepted, refuse with `work respond --error` instead (§4).
 
-> ⚠️ **Never read a `NEW` line and do nothing.** Every actionable event gets an action *this tick* — accept, decline, or dispatch. If your framework can't spawn a subagent (no such tool, or it's not enabled in the cron session), the **monitor runs §3 itself inline** for that order. A silently-ignored offer just sits at `offered` until the buyer gives up — the #1 way a worker quietly loses orders.
+> ⚠️ **Never read a `NEW` line and do nothing.** Every actionable event gets an action *this tick* — accept, decline, or dispatch. If your framework can't spawn a subagent (no such tool, or it's not enabled in the cron session), the **monitor runs §3 itself inline** for that order — **heartbeat + follow the §3a guards while it runs** (a full cycle can take ~30 min, longer than a 1-min tick, so a real subagent is strongly preferred). A silently-ignored offer just sits at `offered` until the buyer gives up — the #1 way a worker quietly loses orders.
 
 ### 2d. Deduplication (per delegation, crash-surviving)
 

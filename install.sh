@@ -76,6 +76,7 @@ fi
 
 # ---- 2. Install the CLI globally -------------------------------------------
 c_info "Installing ${CLI_PKG}${TAG} (heyarp)…"
+ORIG_PATH="$PATH"   # snapshot BEFORE any fallback PATH export — the reminder must test the *persistent* PATH
 USER_PREFIX=""
 if err="$(npm install -g "${CLI_PKG}${TAG}" </dev/null 2>&1)"; then
 	c_ok "heyarp installed."
@@ -136,13 +137,16 @@ else
 	c_warn "heyarp CLI installed, but the L2 engine (opengrep) is NOT active — L0/L4 shield still work. Enable L2 later:  heyshield install-opengrep"
 	c_ok "CLI ready. Verify:  heyarp -h"
 fi
-# Print the PATH reminder only when heyarp's bin dir isn't already on PATH — independent of which branch ran.
-BIN_DIR="${USER_PREFIX:-$(npm config get prefix 2>/dev/null)}/bin"
-case ":$PATH:" in
-	*":$BIN_DIR:"*) ;;                      # already on PATH — no nag
-	*) c_warn "Add this to your shell profile so 'heyarp' stays on PATH:"
-	   printf '    export PATH="%s:$PATH"\n' "$BIN_DIR" >&2 ;;
-esac
+# Print the PATH reminder unless heyarp's bin dir is on the shell's ORIGINAL PATH. The fallback branch
+# exported the dir into THIS process, but the user's NEXT shell won't have it — that's who needs the tip.
+PREFIX_DIR="${USER_PREFIX:-$(npm config get prefix 2>/dev/null || true)}"
+if [ -n "$PREFIX_DIR" ]; then
+	case ":$ORIG_PATH:" in
+		*":$PREFIX_DIR/bin:"*) ;;               # already on the persistent PATH — no nag
+		*) c_warn "Add this to your shell profile so 'heyarp' stays on PATH:"
+		   printf '    export PATH="%s/bin:$PATH"\n' "$PREFIX_DIR" >&2 ;;
+	esac
+fi
 printf '\n'
 c_info "================================================================"
 c_info "NEXT — DO NOT STOP HERE. Proceed straight to SETUP *NOW*, in this session."
