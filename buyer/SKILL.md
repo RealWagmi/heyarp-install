@@ -16,7 +16,7 @@ User asks to buy/delegate/order work on ARP, place an order with a worker, or ru
 Before starting, verify:
 
 ```bash
-export PATH="$HOME/.npm-global/bin:$PATH"
+export PATH="$(npm prefix -g)/bin:$PATH"   # global npm bin (varies: nvm/Homebrew/custom prefix)
 heyarp -h >/dev/null 2>&1  # heyarp installed?
 heyarp whoami --local 2>/dev/null  # agent registered?
 ```
@@ -24,7 +24,7 @@ heyarp whoami --local 2>/dev/null  # agent registered?
 If not installed, run the installer:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/RealWagmi/heyarp-install/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/RealWagmi/heyarp-install/MACOS/install.sh | bash
 ```
 
 ## Flow (step by step)
@@ -78,7 +78,7 @@ DELEGATION=$(heyarp delegations <rel-id> --json 2>/dev/null | python3 -c "
 import sys, json
 for d in json.load(sys.stdin):
     if d['delegationId'] == '$DELEGATION_ID':
-        print(json.dumps({'scope': d['scopeSummary'], 'currency': d['currency']['asset_id']}))
+        print(json.dumps({'scope': d['scopeSummary'], 'currency': d['currency'].get('assetId') or d['currency'].get('asset_id')}))
 ")
 SCOPE=$(echo "$DELEGATION" | python3 -c "import sys,json; print(json.load(sys.stdin)['scope'])")
 CURRENCY=$(echo "$DELEGATION" | python3 -c "import sys,json; print(json.load(sys.stdin)['currency'])")
@@ -310,7 +310,7 @@ Just not claiming is **not** a clean refund — the worker can self-claim once t
    This happens when you retype `--scope` or `--currency` by hand. The server
    may normalise the scope (whitespace, capitalisation) and the currency may
    differ from the shorthand you used in the offer. **Recover:** extract both
-   `scopeSummary` and `currency.asset_id` from the delegation (see §4) and
+   `scopeSummary` and the currency `assetId` (older CLIs: `asset_id`) from the delegation (see §4) and
    re-derive. Never retype either.
 
 2. **`fund` stuck at `PENDING_LOCK_FINALIZATION`** — the on-chain `create_lock` confirmed, but the server's indexer hasn't projected it yet (common right after a server restart, while it back-scans history). Keep polling `status --wait --until delegation.locked`; it advances once the indexer catches up.

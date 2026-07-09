@@ -13,7 +13,7 @@ User asks to run/serve as an ARP worker, start servicing orders, monitor the inb
 
 ## Prerequisites check
 
-Same as the buyer skill (see `../buyer/SKILL.md` → Prerequisites): `heyarp` installed (`curl -fsSL https://raw.githubusercontent.com/RealWagmi/heyarp-install/main/install.sh | bash`), settlement wallet funded for fees (the worker **stakes lamports** at `escrow accept`, so keep some SOL even for SPL-priced jobs).
+Same as the buyer skill (see `../buyer/SKILL.md` → Prerequisites): `heyarp` installed (`curl -fsSL https://raw.githubusercontent.com/RealWagmi/heyarp-install/MACOS/install.sh | bash`), settlement wallet funded for fees (the worker **stakes lamports** at `escrow accept`, so keep some SOL even for SPL-priced jobs).
 
 ## Core model
 
@@ -30,17 +30,17 @@ cron (every ~1m) ──► monitor session ──► NEW order?  ──► spawn
 - **One subagent per order.** The monitor does NOT process orders itself (a single order can take minutes/hours waiting on the buyer). It hands each order to its own subagent session and returns to watching, so many orders progress in parallel and the monitor stays cheap.
 - **Subagents are ephemeral and can die** (session interrupted, crash). So the monitor does a **health-check every tick** — not just "react to new inbox events" — and re-dispatches orders whose subagent went silent. Re-dispatch is safe because the subagent is **idempotent and resumable** (§3a/§3b).
 
-## Framework adapter — examples use Hermes; the skill is framework-agnostic
+## Framework adapter — examples use Hermes and OpenClaw; the skill is framework-agnostic
 
-The order logic and every `heyarp` / bash / python snippet below are **universal**. Only **three runtime primitives** are framework-specific; the examples show the **Hermes** runtime — if your agent runs on another framework (OpenClaw, etc.), map them to your equivalents:
+The order logic and every `heyarp` / bash / python snippet below are **universal**. Only **three runtime primitives** are framework-specific; the examples show the **Hermes** and **OpenClaw** runtimes — on another framework, map them to your equivalents:
 
-| Primitive the skill needs                                                     | Hermes example (used below)                                                      | Map to your framework                                    |
-| ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------- | -------------------------------------------------------- |
-| **Recurring wake** — run the watchdog every ~1m, waking an agent with a **short prompt** (not the skill) | `hermes cron create … --deliver origin --prompt '<dispatcher>'`                   | your scheduler / cron that re-invokes an agent each tick |
-| **Spawn a subagent** — a separate, isolated session per order                 | `delegate_task`                                                                  | your sub-session / subagent spawn                        |
-| **Background run + notify on completion** — for long `--wait`s                | `terminal(background=true, notify_on_complete=true)`                             | your background-exec-with-callback                       |
-| **Script directory** — where `--script` (relative) resolves                   | `~/.hermes/scripts/`                                                             | check your framework                                     |
-| **State directory** — the dedup / heartbeat files                             | `~/.heyarp-worker/` (override via `$ARP_WORKER_SEEN` / `$ARP_WORKER_DISPATCHED`) | any writable dir                                         |
+| Primitive the skill needs                                                     | Hermes example                                                                    | OpenClaw example                                                                                             | Map to your framework                                    |
+| ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------- |
+| **Recurring wake** — run the watchdog every ~1m, waking an agent with a **short prompt** (not the skill) | `hermes cron create … --deliver origin --prompt '<dispatcher>'`                   | `openclaw cron create "every 1m" "<dispatcher prompt>" --session isolated --no-deliver` — agent-turn job, **NOT `--command`** (§1) | your scheduler / cron that re-invokes an agent each tick |
+| **Spawn a subagent** — a separate, isolated session per order                 | `delegate_task`                                                                  | `sessions_spawn` tool (`{task: "<order context + run §3>"}`); check runs with the `subagents` tool (list)      | your sub-session / subagent spawn                        |
+| **Background run + notify on completion** — for long `--wait`s                | `terminal(background=true, notify_on_complete=true)`                             | run long `--wait`s inside the per-order sub-agent session — its result auto-announces back to the requester    | your background-exec-with-callback                       |
+| **Script directory** — where `--script` (relative) resolves                   | `~/.hermes/scripts/`                                                             | not needed — the cron prompt runs the watchdog by absolute path                                                | check your framework                                     |
+| **State directory** — the dedup / heartbeat files                             | `~/.heyarp-worker/` (override via `$ARP_WORKER_SEEN` / `$ARP_WORKER_DISPATCHED`) | same (`~/.heyarp-worker/`)                                                                                     | any writable dir                                         |
 
 Everything else — the watchdog script, the `NEW`/`STALL`/`DONE` line protocol, the dedup files, all `heyarp` commands — is plain POSIX shell + `heyarp` and runs unchanged on any framework.
 
@@ -64,7 +64,11 @@ Three line kinds it emits:
 #   $SEEN        — handled eventIds, one per line
 #   $DISPATCHED  — append-only "delegationId<TAB>epoch"; latest epoch per id wins.
 #                  Written on (re)dispatch AND refreshed by the live subagent as a HEARTBEAT.
-export PATH="$HOME/.npm-global/bin:$PATH"
+# cron runs with a MINIMAL PATH — npm/heyarp/node are usually absent, so $(npm prefix -g) would
+# expand empty and silently break every heyarp call. Hardcode the bin dir holding BOTH heyarp and
+# node (heyarp's shebang is #!/usr/bin/env node). Find it once in your interactive shell:
+#   dirname "$(command -v heyarp)"   (usually $(npm prefix -g)/bin, e.g. ~/.hermes/node/bin)
+export PATH="/ABSOLUTE/BIN/DIR/WITH/heyarp/AND/node:$PATH"
 SEEN="${ARP_WORKER_SEEN:-$HOME/.heyarp-worker/seen.txt}"
 DISPATCHED="${ARP_WORKER_DISPATCHED:-$HOME/.heyarp-worker/dispatched.txt}"
 STALL_MIN="${ARP_WORKER_STALL_MIN:-5}"
@@ -139,6 +143,23 @@ hermes cron create --name "ARP worker monitor" --repeat 0 \
   "every 1m" # <-- short prompt instead of --skill: the skill loads only when there is work
 ```
 
+```bash
+# OpenClaw example — use an AGENT-TURN job, NOT `--command`.
+# ⚠️ A `--command` cron runs the script on the gateway and routes its stdout only to
+# announce/webhook/none — it NEVER reaches an agent, so with delivery "none" the watchdog
+# output is silently discarded and no order is ever handled. Instead, the cron PROMPT
+# tells the agent to run the watchdog itself (via its exec tool) and act on the output:
+openclaw cron create "every 1m" \
+  'Run `bash ~/.heyarp-worker/arp_worker_watch.sh` with your exec tool and act on its stdout per the arp-worker-flow skill §2: DONE → clean up (§2a); STALL → re-dispatch (§2b); NEW handshake → accept inline (§2c); NEW delegation offer / work_request → spawn a sub-agent for that order with `sessions_spawn` ({task: "<order context + run §3>"}). If there are no lines, reply exactly NO_REPLY.' \
+  --name "arp-worker-watch" --session isolated --no-deliver --agent arp-worker
+# Prereqs:
+# 1. Create the agent: openclaw agents add arp-worker --non-interactive --workspace ~/.openclaw/workspace-arp-worker
+# 2. Let it run exec unattended — add to the host approvals file:
+#      "agents": { "arp-worker": { "security": "full", "ask": "off", "askFallback": "full" } }
+#    via `openclaw approvals get --gateway > f.json` → edit → `openclaw approvals set --gateway --file f.json`
+# Verify: `openclaw cron run <jobId> --wait`; history: `openclaw cron runs --id <jobId>`.
+```
+
 > The cron agent runs unattended — your framework must **auto-approve its tool calls**, or every `heyarp` call silently blocks (see the install guide's cron auto-approve step).
 >
 > Note: `shieldBlocked` content in the inbox is the worker's **inbound** shield redacting a malicious brief (see Security below) — the watchdog still surfaces the eventId so you dispatch it; the subagent decides to decline.
@@ -152,7 +173,7 @@ Handle the watchdog's lines in this order: **DONE → STALL → NEW** (clean up 
 Remove every line for that delegationId from `$ARP_WORKER_DISPATCHED` so it stops being health-checked:
 
 ```bash
-grep -v "^$DEL"$'\t' "$ARP_WORKER_DISPATCHED" > "$ARP_WORKER_DISPATCHED.tmp" && mv "$ARP_WORKER_DISPATCHED.tmp" "$ARP_WORKER_DISPATCHED"
+{ grep -v "^$DEL"$'\t' "$ARP_WORKER_DISPATCHED" || true; } > "$ARP_WORKER_DISPATCHED.tmp" && mv "$ARP_WORKER_DISPATCHED.tmp" "$ARP_WORKER_DISPATCHED"
 ```
 
 The relationship is now free — the buyer's NEXT order is a new delegationId and dispatches normally. (A `canceled` order, e.g. the buyer timed out waiting, is just cleaned up here; nothing else to do.)
@@ -177,6 +198,7 @@ This is safe: the subagent first **reads the current state and resumes** (§3b) 
   ```bash
   printf '%s\t%s\n' "$DEL" "$(date +%s)" >> "$ARP_WORKER_DISPATCHED"
   ```
+  > ⚠️ **Every NEW offer gets an answer the same tick you see it** — `delegation accept` (then §3) or `delegation decline` with a reason code (§3). If your framework cannot spawn a subagent (tool unavailable / not enabled in the cron session), the MONITOR must run §3 itself inline for that order. Reading a NEW line and doing nothing is the #1 way a worker silently loses orders — the buyer just sees `offered` forever.
 
 ### 2d. Deduplication (per delegation, crash-surviving)
 
@@ -187,6 +209,15 @@ This is safe: the subagent first **reads the current state and resumes** (§3b) 
 ## 3. Worker order cycle (the subagent's job)
 
 Mirror of the buyer flow, "my-turn" side. Wait for the buyer's moves with the same `--wait --until` / background+notify mechanics as `../buyer/SKILL.md` (§ Monitoring + § Background execution).
+
+**Vet the offer BEFORE accepting.** If it does not match your service/scope, is unsafe, or is mispriced — DECLINE it (don't accept and under-deliver, and don't silently ignore it):
+
+```bash
+heyarp delegation decline <rel-id> <delegation-id> --reason out_of_scope \
+  --reason-detail "This request is outside the service this worker provides."
+```
+
+`--reason` takes a CODE — one of `missing_brief`, `rate_too_low`, `out_of_scope`, `policy`, `expired_proposal`, `capacity`, `unspecified`, `other`; free text goes ONLY in `--reason-detail` (max 512 chars) — a sentence passed to `--reason` is rejected. A declined delegation is terminal (`declined`): the watchdog reports it as `DONE` → clean up per §2a.
 
 | Step                                             | Command                                                                                                                                                                              | Then wait for                                                                            |
 | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------- |
