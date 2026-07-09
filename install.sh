@@ -124,6 +124,10 @@ else
 			c_warn "opengrep install did not complete. L0/L4 still work; L2 (code/script scanning) stays unavailable until you run: heyshield install-opengrep"
 		fi
 	else
+		if [ "${HEYSHIELD_REQUIRE_OPENGREP:-}" = "1" ]; then
+			c_err "Could not locate @heyanon-arp/shield to install opengrep, and HEYSHIELD_REQUIRE_OPENGREP=1."
+			exit 1
+		fi
 		c_warn "Could not locate @heyanon-arp/shield to install opengrep. Run 'heyshield install-opengrep' once heyarp is on PATH."
 	fi
 fi

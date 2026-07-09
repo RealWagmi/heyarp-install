@@ -117,6 +117,7 @@ heyarp wallet create-lock \
 ```
 
 > `--cluster-tag 0` = devnet, `--cluster-tag 1` = mainnet — must match where the lock lives.
+> **The lock amount (`--amount-lamports` for native SOL; `--amount-base-units` for SPL — next line) must equal the `--amount` you offered in step 3, converted to base units** — SOL ×1e9, USDC/USDT ×1e6, ANON ×1e9 (decimals per asset: `heyarp assets`; e.g. 0.5 SOL → `500000000`); a mismatch is rejected at `delegation fund`.
 For an **SPL token** lock, replace `--amount-lamports` with `--mint-pubkey <mint> --amount-base-units <int>` (e.g. USDC). Program id is auto-discovered from the server; pass `--program-id <pubkey>` to pin it.
 
 ### 7. Fund

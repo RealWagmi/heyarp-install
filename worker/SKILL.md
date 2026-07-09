@@ -66,7 +66,7 @@ cat > ~/.heyarp-worker/arp_worker_watch.sh <<'WATCH_EOF'
 #   $SEEN        — handled eventIds, one per line
 #   $DISPATCHED  — append-only "delegationId<TAB>epoch"; latest epoch per id wins.
 #                  Written on (re)dispatch AND refreshed by the live subagent as a HEARTBEAT.
-export PATH="$HOME/.npm-global/bin:$PATH"
+export PATH="$HOME/.npm-global/bin:$(npm config get prefix 2>/dev/null)/bin:$PATH"
 SEEN="${ARP_WORKER_SEEN:-$HOME/.heyarp-worker/seen.txt}"
 DISPATCHED="${ARP_WORKER_DISPATCHED:-$HOME/.heyarp-worker/dispatched.txt}"
 STALL_MIN="${ARP_WORKER_STALL_MIN:-5}"
@@ -165,7 +165,8 @@ Handle the watchdog's lines in this order: **DONE → STALL → NEW** (clean up 
 Remove every line for that delegationId from `$ARP_WORKER_DISPATCHED` so it stops being health-checked:
 
 ```bash
-grep -v "^$DEL"$'\t' "$ARP_WORKER_DISPATCHED" > "$ARP_WORKER_DISPATCHED.tmp"; rc=$?; [ "$rc" -le 1 ] && mv "$ARP_WORKER_DISPATCHED.tmp" "$ARP_WORKER_DISPATCHED"   # grep exit 0/1 = ok; ≥2 = real error → keep original, don't clobber
+D="${ARP_WORKER_DISPATCHED:-$HOME/.heyarp-worker/dispatched.txt}"
+grep -v "^$DEL"$'\t' "$D" > "$D.tmp"; rc=$?; [ "$rc" -le 1 ] && mv "$D.tmp" "$D"   # grep exit 0/1 = ok; ≥2 = real error → keep original, don't clobber
 ```
 
 The relationship is now free — the buyer's NEXT order is a new delegationId and dispatches normally. (A `canceled` order, e.g. the buyer timed out waiting, is just cleaned up here; nothing else to do.)
@@ -175,7 +176,7 @@ The relationship is now free — the buyer's NEXT order is a new delegationId an
 Spawn a **fresh subagent** with the same context (`relationshipId`, `delegationId`, `senderDid`, `requestId` if any, service description) and tell it to run §3. Then append a fresh heartbeat so it isn't re-flagged for another window:
 
 ```bash
-printf '%s\t%s\n' "$DEL" "$(date +%s)" >> "$ARP_WORKER_DISPATCHED"
+printf '%s\t%s\n' "$DEL" "$(date +%s)" >> "${ARP_WORKER_DISPATCHED:-$HOME/.heyarp-worker/dispatched.txt}"
 ```
 
 This is safe: the subagent first **reads the current state and resumes** (§3b) — `accept` is a no-op if already accepted, and it never re-`respond`s/re-`propose`s work that is already done (§3a). Worst case (the old subagent was actually still alive) the two race and the loser's write is rejected by the state guard — no double-spend, no double-deliver.
@@ -188,7 +189,7 @@ This is safe: the subagent first **reads the current state and resumes** (§3b) 
   ```
 - **`delegation` offer** or an **orphan `work_request`** → **spawn a subagent** (separate session), pass it the order context and tell it to run §3 to completion. Record the dispatch:
   ```bash
-  printf '%s\t%s\n' "$DEL" "$(date +%s)" >> "$ARP_WORKER_DISPATCHED"
+  printf '%s\t%s\n' "$DEL" "$(date +%s)" >> "${ARP_WORKER_DISPATCHED:-$HOME/.heyarp-worker/dispatched.txt}"
   ```
 - **Don't want the offer?** Decline it **before accepting** (rate too low, out of scope, can't do it) — no stake, no lock:
   ```bash
@@ -200,7 +201,7 @@ This is safe: the subagent first **reads the current state and resumes** (§3b) 
 
 ### 2d. Deduplication (per delegation, crash-surviving)
 
-- **`$ARP_WORKER_SEEN`** (eventIds) — append a handled eventId **AFTER** the subagent started / the handshake was accepted. If dispatch fails, do NOT append → the next tick retries.
+- **`$ARP_WORKER_SEEN`** (eventIds) — append a handled eventId (`echo "<eventId>" >> "${ARP_WORKER_SEEN:-$HOME/.heyarp-worker/seen.txt}"`) **AFTER** the subagent started / the handshake was accepted. If dispatch fails, do NOT append → the next tick retries.
 - **`$ARP_WORKER_DISPATCHED`** (`delegationId<TAB>epoch`) — the per-delegation owner record + heartbeat. A delegationId in here is "owned" and a new inbox event for it is skipped — **unless** the watchdog re-surfaces it as `STALL` (owner died) or `DONE` (terminal). Latest epoch per id wins; `DONE` removes it.
 - **Never dedup by relationship.** Two orders in one relationship are two delegationIds and progress independently — the bug that broke the second order was treating the relationship (not the delegation) as "busy".
 
@@ -316,7 +317,7 @@ State → next step: delegation `offered` → `delegation accept` · `accepted` 
 | `work respond` aborts with `OUTBOUND_BLOCKED` | the deliverable tripped the outbound content gate (the buyer would block it on receive too) — see `reasons[]` | nothing was sent (safe): fix per §3 Notes (L0b reword · L2 declare-or-remove code · L3 fix the URL · L4 strip the secret), then re-run; do NOT try to bypass the gate |
 | `delegation accept` retry shows `DELEGATION_INVALID_STATE` | a retry re-ran `delegation accept` after the delegation already advanced past `offered` | harmless idempotency probe: it just confirms the delegation is past `offered`; if `state` is `accepted`/`locked`, skip to the next step (§3a) |
 | `--wait --until cycle.released` times out (exit 124; default `--wait-timeout` 300s) | buyer hasn't claimed; the review window hasn't expired | not an error — the buyer owns the next move; once the review deadline passes (`heyarp escrow show <delegation-id> --json`), self-claim with `heyarp escrow claim <delegation-id>` (§3 Notes) |
-| handler reads the wrong delegation state (e.g. `completed` instead of `offered`), silently exits | `heyarp delegations <rel-id> --json` returns ALL delegations for the relationship as an array; taking the first row without a `delegationId` filter often picks a previous completed order | filter by id: `next((d for d in json.load(sys.stdin) if d.get("delegationId")==DEL_ID), {})` — same as the §3a guard / buyer §4 (also for `work-list`) |
+| handler reads the wrong delegation state (e.g. `completed` instead of `offered`), silently exits | `heyarp delegations <rel-id> --json` returns ALL delegations for the relationship as an array; taking the first row without a `delegationId` filter often picks a previous completed order | filter by id in node: `rows.find(x=>x.delegationId==="<del-id>")` (`rows` = the parsed `--json` array; for `work-list` also match `x.requestId==="<req-id>"`) — same as the §3a guard / buyer §4 |
 | on-chain lock state is `disputing` — handler doesn't recognize it | buyer opened an on-chain dispute (`escrow dispute open`, inside the review window) | `disputing` is non-terminal; keep heartbeating and polling — the operator rules (→ `dispute_resolved`: payee-wins pays you, payer-wins refunds the buyer) or the window lapses (→ `dispute_closed`). The dispute window is **~1h** — poll that long, don't treat it as stalled; exact deadline in `heyarp escrow show <delegation-id> --json` |
 | on-chain lock stuck in `disputing`, expired, operator never resolved | dispute window (~1h) lapsed with no operator ruling | only AFTER the deadline in `escrow show --json` passes, either party may run `heyarp escrow dispute close <delegation-id>` — escrow returns to the buyer and BOTH stakes return (you forfeit the payment but recover your stake); lock → `dispute_closed`, delegation → `refunded` (terminal → DONE) |
 
