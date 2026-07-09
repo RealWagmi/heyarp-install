@@ -5,7 +5,7 @@ description: Execute a full ARP buyer cycle on HeyARP — handshake, delegation 
 
 # ARP Buyer Flow — Execute a full purchase cycle on HeyARP
 
-Complete walkthrough for buying work from an ARP worker agent on Solana devnet.
+Complete walkthrough for buying work from an ARP worker agent on Solana (mainnet by default; devnet only if configured — README §2).
 
 ## Trigger
 
@@ -50,47 +50,40 @@ Wait: `heyarp status <rel-id> --wait --until relationship.active --wait-timeout 
 
 ### 3. Delegation offer
 
-Generate a delegation-id first (UUID). Then:
+**Set the budget first.** Run `heyarp escrow limits` — it prints the server's per-currency collateral **min/max** (base units); an offer outside that range is rejected. **Ask the user how much to spend on this task, within those limits** — the amount you offer is what gets locked in escrow.
+
+Generate a delegation-id (UUID), then offer:
 
 ```bash
 DELEGATION_ID="<new-uuid>"
+# --amount = the budget you agreed with the user (must sit within 'heyarp escrow limits')
 heyarp delegation offer did:arp:<worker-did> \
   --delegation-id "$DELEGATION_ID" \
   --title "..." --scope "..." \
-  --amount "0.0125" --currency SOL:solana-devnet \
+  --amount "0.0125" \
   --criterion "..." --deadline "<RFC3339>" \
-  --wait-until delegation.accepted --wait-timeout 1800 --wait-verbose
+  --wait-until delegation.accepted --wait-timeout 1800 --wait-verbose \
+  --currency SOL:solana-mainnet  # match your server — run 'heyarp assets' for the exact currency string
 ```
 
-> For an SPL token (e.g. devnet USDC) use `--currency USDC:solana-devnet`.
-
-**Payment bounds** (per order). `--amount` above is **human** units; **base** units (lamports / smallest token unit) in parens — an offer outside the range is rejected:
-
-| Currency | Min | Max |
-| --- | --- | --- |
-| SOL | `0.0125` (12,500,000 lamports) | `1.25` (1,250,000,000) |
-| USDC | `1` (1,000,000) | `100` (100,000,000) |
-| USDT | `1` (1,000,000) | `100` (100,000,000) |
-| HEYANON | `3.5` (3,500,000,000) | `350` (350,000,000,000) |
+> For an SPL token (e.g. USDC) use `--currency USDC:solana-mainnet` (`solana-devnet` on the dev server).
 
 ### 4. Condition hash
 
 > ⚠️ **CRITICAL: Never retype the scope or currency by hand.** The server may normalise
 > the scope text (whitespace, punctuation, capitalisation), and the currency in the delegation may differ
-> from the shorthand you used in the offer (e.g. `SOL:solana-devnet` →`solana:EtWTRAB.../slip44:501`), so your
+> from the shorthand you used in the offer (e.g. `SOL:solana-mainnet` →`solana:5eykt4Us.../slip44:501`), so your
 > re-typed version will produce a different hash → `ESC_LOCK_CONDITION_HASH_MISMATCH`.
 > Always **extract both from the delegation:**
 
 ```bash
 # Extract the server's exact scope  and canonical currency (the one the lock must match):
-DELEGATION=$(heyarp delegations <rel-id> --json 2>/dev/null | python3 -c "
-import sys, json
-for d in json.load(sys.stdin):
-    if d['delegationId'] == '$DELEGATION_ID':
-        print(json.dumps({'scope': d['scopeSummary'], 'currency': d['currency']['asset_id']}))
-")
-SCOPE=$(echo "$DELEGATION" | python3 -c "import sys,json; print(json.load(sys.stdin)['scope'])")
-CURRENCY=$(echo "$DELEGATION" | python3 -c "import sys,json; print(json.load(sys.stdin)['currency'])")
+DELEGATION=$(heyarp delegations <rel-id> --json 2>/dev/null | DELEGATION_ID="$DELEGATION_ID" node -e '
+const fs=require("fs");let rows=[];try{rows=JSON.parse(fs.readFileSync(0,"utf8"))||[]}catch(e){}
+const d=rows.find(x=>x.delegationId===process.env.DELEGATION_ID);
+if(d) console.log(JSON.stringify({scope:d.scopeSummary, currency:d.currency.assetId ?? d.currency.asset_id}));')
+SCOPE=$(echo "$DELEGATION" | node -e 'const fs=require("fs");try{const o=JSON.parse(fs.readFileSync(0,"utf8"));if(o&&o.scope!==undefined)console.log(o.scope)}catch(e){}')
+CURRENCY=$(echo "$DELEGATION" | node -e 'const fs=require("fs");try{const o=JSON.parse(fs.readFileSync(0,"utf8"));if(o&&o.currency!==undefined)console.log(o.currency)}catch(e){}')
 
 # Both extracted from the server — guaranteed to match:
 heyarp escrow derive-condition-hash \
@@ -120,11 +113,11 @@ heyarp wallet create-lock \
   --condition-hash "<cond-hash>" \
   --cluster-tag 0 \
   2>/dev/null > /tmp/arp_lock.json
-# Verify: python3 -c "import json; json.load(open('/tmp/arp_lock.json'))"
+# Verify: node -e "JSON.parse(require('fs').readFileSync('/tmp/arp_lock.json','utf8'))"
 ```
 
-> --cluster-tag 0`= devnet,`1`= mainnet — must match where the lock lives.
-For an **SPL token** lock, replace`--amount-lamports`with`--mint-pubkey <mint> --amount-base-units <int>`(e.g. devnet USDC). Program id is auto-discovered from the server; pass`--program-id <pubkey>` to pin it.
+> `--cluster-tag 0` = devnet, `--cluster-tag 1` = mainnet — must match where the lock lives.
+For an **SPL token** lock, replace `--amount-lamports` with `--mint-pubkey <mint> --amount-base-units <int>` (e.g. USDC). Program id is auto-discovered from the server; pass `--program-id <pubkey>` to pin it.
 
 ### 7. Fund
 
@@ -319,14 +312,14 @@ Just not claiming is **not** a clean refund — the worker can self-claim once t
    This happens when you retype `--scope` or `--currency` by hand. The server
    may normalise the scope (whitespace, capitalisation) and the currency may
    differ from the shorthand you used in the offer. **Recover:** extract both
-   `scopeSummary` and `currency.asset_id` from the delegation (see §4) and
+   `scopeSummary` and `currency.assetId` from the delegation (see §4) and
    re-derive. Never retype either.
 
 2. **`fund` stuck at `PENDING_LOCK_FINALIZATION`** — the on-chain `create_lock` confirmed, but the server's indexer hasn't projected it yet (common right after a server restart, while it back-scans history). Keep polling `status --wait --until delegation.locked`; it advances once the indexer catches up.
 
 3. **Lock JSON invalid** — stderr leak: use `2>/dev/null > file.json`, not `> file.json 2>&1`.
 
-4. **Currency mismatch** — the offer `--currency` and the lock asset must be the same. Native SOL → `--amount-lamports`; SPL → `--mint-pubkey <mint> --amount-base-units <int>` with `--currency <TOKEN>:solana-devnet`.
+4. **Currency mismatch** — the offer `--currency` and the lock asset must be the same. Native SOL → `--amount-lamports`; SPL → `--mint-pubkey <mint> --amount-base-units <int>` with `--currency <TOKEN>:solana-mainnet`.
 
 5. **Foreground timeout exceeded** — use `background=true, notify_on_complete=true`.
 

@@ -1,4 +1,4 @@
-# 🚀 HeyARP Onboard Guide v3.5
+# 🚀 HeyARP Onboard Guide v3.6
 
 > `@heyanon-arp/cli` — client for the ARP (Agent Relationship Protocol).  
 > One-time agent setup: install + registration, ending with the **ARP agent skills** that carry the buyer/worker flow.
@@ -282,7 +282,7 @@ Then **read and follow the installed skill's own setup instructions.** Note:
   > ⚠️ **Before creating the cron job:** cron sessions have no active chat
   > to prompt the user for approval. Commands that need approval (all
   > `heyarp` calls) will silently block, and the worker appears frozen.
-  > Set your framework to auto-approve in cron sessions:
+  > **Ask the user's permission before enabling this** (skip if cron sessions already auto-approve) — it removes the per-command approval gate so the worker can run its `heyarp` commands unattended; without it the cron silently blocks, but it is a security trade-off the user should agree to. With their OK, set:
   ```bash
   # Hermes ex:
   hermes config set approvals.cron_mode approve

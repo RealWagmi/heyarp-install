@@ -30,17 +30,17 @@ cron (every ~1m) ──► monitor session ──► NEW order?  ──► spawn
 - **One subagent per order.** The monitor does NOT process orders itself (a single order can take minutes/hours waiting on the buyer). It hands each order to its own subagent session and returns to watching, so many orders progress in parallel and the monitor stays cheap.
 - **Subagents are ephemeral and can die** (session interrupted, crash). So the monitor does a **health-check every tick** — not just "react to new inbox events" — and re-dispatches orders whose subagent went silent. Re-dispatch is safe because the subagent is **idempotent and resumable** (§3a/§3b).
 
-## Framework adapter — examples use Hermes; the skill is framework-agnostic
+## Framework adapter — examples use Hermes and OpenClaw; the skill is framework-agnostic
 
-The order logic and every `heyarp` / bash / python snippet below are **universal**. Only **three runtime primitives** are framework-specific; the examples show the **Hermes** runtime — if your agent runs on another framework (OpenClaw, etc.), map them to your equivalents:
+The order logic and every `heyarp` / bash / node snippet below are **universal**. Only **three runtime primitives** are framework-specific; the examples show the **Hermes** and **OpenClaw** runtimes — on another framework, map them to your equivalents:
 
-| Primitive the skill needs                                                     | Hermes example (used below)                                                      | Map to your framework                                    |
-| ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------- | -------------------------------------------------------- |
-| **Recurring wake** — run the watchdog every ~1m, waking an agent with a **short prompt** (not the skill) | `hermes cron create … --deliver origin --prompt '<dispatcher>'`                   | your scheduler / cron that re-invokes an agent each tick |
-| **Spawn a subagent** — a separate, isolated session per order                 | `delegate_task`                                                                  | your sub-session / subagent spawn                        |
-| **Background run + notify on completion** — for long `--wait`s                | `terminal(background=true, notify_on_complete=true)`                             | your background-exec-with-callback                       |
-| **Script directory** — where `--script` (relative) resolves                   | `~/.hermes/scripts/`                                                             | check your framework                                     |
-| **State directory** — the dedup / heartbeat files                             | `~/.heyarp-worker/` (override via `$ARP_WORKER_SEEN` / `$ARP_WORKER_DISPATCHED`) | any writable dir                                         |
+| Primitive the skill needs                                                     | Hermes example                                                                    | OpenClaw example                                                                                             | Map to your framework                                    |
+| ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------- |
+| **Recurring wake** — run the watchdog every ~1m, waking an agent with a **short prompt** (not the skill) | `hermes cron create … --deliver origin --prompt '<dispatcher>'`                   | `openclaw cron create "every 1m" "<dispatcher prompt>" --session isolated --no-deliver` — agent-turn job, **NOT `--command`** (§1) | your scheduler / cron that re-invokes an agent each tick |
+| **Spawn a subagent** — a separate, isolated session per order                 | `delegate_task`                                                                  | `sessions_spawn` tool (`{task: "<order context + run §3>"}`); check runs with the `subagents` tool (list)      | your sub-session / subagent spawn                        |
+| **Background run + notify on completion** — for long `--wait`s                | `terminal(background=true, notify_on_complete=true)`                             | run long `--wait`s inside the per-order sub-agent session — its result auto-announces back to the requester    | your background-exec-with-callback                       |
+| **Script directory** — where `--script` (relative) resolves                   | `~/.hermes/scripts/`                                                             | not needed — the cron prompt runs the watchdog by absolute path                                                | check your framework                                     |
+| **State directory** — the dedup / heartbeat files                             | `~/.heyarp-worker/` (override via `$ARP_WORKER_SEEN` / `$ARP_WORKER_DISPATCHED`) | same (`~/.heyarp-worker/`)                                                                                     | any writable dir                                         |
 
 Everything else — the watchdog script, the `NEW`/`STALL`/`DONE` line protocol, the dedup files, all `heyarp` commands — is plain POSIX shell + `heyarp` and runs unchanged on any framework.
 
@@ -57,6 +57,8 @@ Three line kinds it emits:
 | `DONE  <rel> <delId> <state>`                              | terminal (completed/canceled/declined/refunded)                                     | clean up tracking (§2a) |
 
 ```bash
+mkdir -p ~/.heyarp-worker
+cat > ~/.heyarp-worker/arp_worker_watch.sh <<'WATCH_EOF'
 #!/bin/bash
 # arp_worker_watch.sh — run by your framework's recurring scheduler (see "Framework adapter").
 # Emits NEW / STALL / DONE lines (see table). Two tracking files the caller (monitor)
@@ -71,53 +73,47 @@ STALL_MIN="${ARP_WORKER_STALL_MIN:-5}"
 mkdir -p "$(dirname "$SEEN")"; touch "$SEEN" "$DISPATCHED"
 
 # (1) NEW orders — inbox is recipient-side, spans ALL relationships.
-heyarp inbox --json 2>/dev/null | SEEN="$SEEN" python3 -c '
-import sys, json, os
-seen = set(open(os.environ["SEEN"]).read().split())
-try: events = json.load(sys.stdin)
-except Exception: events = []
-for e in events:
-    t = e.get("type"); c = (e.get("body") or {}).get("content") or {}
-    actionable = t in ("handshake", "work_request") or (t == "delegation" and c.get("action") == "offer")
-    if actionable and e.get("eventId") not in seen:
-        print("\t".join(["NEW", e.get("relationshipId",""), t, e.get("eventId",""),
-                          e.get("senderDid",""), str(c.get("delegation_id","")), str(c.get("request_id",""))]))
-'
+heyarp inbox --json 2>/dev/null | SEEN="$SEEN" node -e '
+const fs=require("fs");
+const seen=new Set(fs.readFileSync(process.env.SEEN,"utf8").split(/\s+/).filter(Boolean));
+let events=[]; try{events=JSON.parse(fs.readFileSync(0,"utf8"))||[]}catch(e){}
+for(const e of events){
+  const c=(e.body||{}).content||{};
+  const ok=["handshake","work_request"].includes(e.type)||(e.type==="delegation"&&c.action==="offer");
+  if(ok && !seen.has(e.eventId))
+    console.log(["NEW",e.relationshipId||"",e.type,e.eventId||"",e.senderDid||"",String(c.delegation_id??""),String(c.request_id??"")].join("\t"));
+}'
 
 # (2) HEALTH-CHECK existing delegations so a DEAD subagent is noticed even with an empty inbox.
 heyarp relationships --json 2>/dev/null \
-  | python3 -c 'import sys,json;[print(r.get("relationshipId","")) for r in (json.load(sys.stdin) or [])]' 2>/dev/null \
+  | node -e 'const fs=require("fs");try{(JSON.parse(fs.readFileSync(0,"utf8")||"[]")||[]).forEach(r=>console.log(r.relationshipId||""))}catch(e){}' 2>/dev/null \
   | while read -r REL; do
       [ -n "$REL" ] || continue
       heyarp delegations "$REL" --json 2>/dev/null \
-        | REL="$REL" DISPATCHED="$DISPATCHED" STALL_MIN="$STALL_MIN" python3 -c '
-import sys, json, os, time
-rel = os.environ["REL"]; stall = float(os.environ["STALL_MIN"]) * 60
-TERMINAL = {"completed", "canceled", "declined", "refunded"}
-disp = {}                       # delegationId -> latest heartbeat/dispatch epoch
-for ln in open(os.environ["DISPATCHED"]):
-    p = ln.rstrip("\n").split("\t")
-    if len(p) >= 2 and p[0]:
-        try: disp[p[0]] = max(disp.get(p[0], 0.0), float(p[1]))
-        except ValueError: pass
-now = time.time()
-try: rows = json.load(sys.stdin) or []
-except Exception: rows = []
-for d in rows:
-    did, st = d.get("delegationId"), d.get("state")
-    if not did: continue
-    if st in TERMINAL:
-        if did in disp: print("\t".join(["DONE", rel, did, st]))
-    else:
-        last = disp.get(did)                          # only orders we dispatched are tracked
-        if last is not None and (now - last) > stall: # no heartbeat for STALL_MIN → subagent died
-            print("\t".join(["STALL", rel, did, st, "%d" % ((now - last) / 60)]))
-'
+        | REL="$REL" DISPATCHED="$DISPATCHED" STALL_MIN="$STALL_MIN" node -e '
+const fs=require("fs");
+const rel=process.env.REL, stall=parseFloat(process.env.STALL_MIN)*60, now=Date.now()/1000;
+const TERMINAL=new Set(["completed","canceled","declined","refunded"]);
+const disp=new Map();                       // delegationId -> latest heartbeat/dispatch epoch
+for(const ln of fs.readFileSync(process.env.DISPATCHED,"utf8").split("\n")){
+  const p=ln.split("\t");
+  if(p.length>=2 && p[0]){ const v=parseFloat(p[1]); if(!isNaN(v)) disp.set(p[0],Math.max(disp.get(p[0])||0,v)); }  // latest epoch; skip garbage
+}
+let rows=[]; try{rows=JSON.parse(fs.readFileSync(0,"utf8"))||[]}catch(e){}
+for(const d of rows){
+  const did=d.delegationId, st=d.state;
+  if(!did) continue;
+  if(TERMINAL.has(st)){ if(disp.has(did)) console.log(["DONE",rel,did,st].join("\t")); }
+  else { const last=disp.get(did);                                    // only orders we dispatched are tracked
+         if(last!==undefined && (now-last)>stall)                     // no heartbeat for STALL_MIN → subagent died
+           console.log(["STALL",rel,did,st,String(Math.floor((now-last)/60))].join("\t")); }
+}'
     done
+WATCH_EOF
+chmod +x ~/.heyarp-worker/arp_worker_watch.sh
 ```
 
 ```bash
-chmod +x ~/.heyarp-worker/arp_worker_watch.sh
 # Register it with your framework's recurring scheduler so it re-invokes an agent
 # session every ~1 minute, INDEFINITELY (unlike the buyer's bounded per-order poll).
 #
@@ -130,13 +126,26 @@ cp ~/.heyarp-worker/arp_worker_watch.sh ~/.hermes/scripts/arp_worker_watch.sh
 chmod +x ~/.hermes/scripts/arp_worker_watch.sh
 # For the cron agent, enable only the minimally necessary toolset (below) — NOT the default
 # 'hermes-cli' (all 19 tools); this roughly halves the per-tick system prompt. (Flag per your Hermes.)
-hermes cron create --name "ARP worker monitor" --repeat 0 \
+hermes cron create --name "ARP worker monitor" \
   --script arp_worker_watch.sh --deliver origin \
   --enabled-toolsets terminal,delegate_task,skill_view,process,read_file,write_file \
   --prompt 'You were handed the console output (stdout) of arp_worker_watch.sh — the inbox watchdog. Read its lines (do NOT re-run the script):
 - empty → reply "idle" and stop; do NOT load the skill.
 - any NEW/STALL/DONE line → load the arp-worker-flow skill and handle the lines per §2, then exit.' \
   "every 1m" # <-- short prompt instead of --skill: the skill loads only when there is work
+```
+
+```bash
+# OpenClaw — use an AGENT-TURN cron, NOT `--command` (a `--command` cron routes the
+# watchdog's stdout to announce/webhook/none, NEVER to an agent → output is discarded).
+# The prompt makes the agent run the watchdog itself and act on the output:
+openclaw cron create "every 1m" \
+  'Run `bash ~/.heyarp-worker/arp_worker_watch.sh` (your exec tool) and handle its stdout per the arp-worker-flow skill §2 (DONE→§2a, STALL→§2b, NEW→§2c; spawn a sub-agent per order with `sessions_spawn` {task:"<order ctx + run §3>"}). No lines → reply exactly NO_REPLY.' \
+  --name arp-worker-watch --session isolated --no-deliver --agent arp-worker
+# Prereqs: (1) create the agent — `openclaw agents add arp-worker --non-interactive --workspace ~/.openclaw/workspace-arp-worker`;
+# (2) let it run exec unattended — set host approvals for it to {security:"full", ask:"off", askFallback:"full"}
+#     (`openclaw approvals get --gateway > f.json` → edit → `openclaw approvals set --gateway --file f.json`).
+# Verify: `openclaw cron run <jobId> --wait`.
 ```
 
 > The cron agent runs unattended — your framework must **auto-approve its tool calls**, or every `heyarp` call silently blocks (see the install guide's cron auto-approve step).
@@ -152,7 +161,7 @@ Handle the watchdog's lines in this order: **DONE → STALL → NEW** (clean up 
 Remove every line for that delegationId from `$ARP_WORKER_DISPATCHED` so it stops being health-checked:
 
 ```bash
-grep -v "^$DEL"$'\t' "$ARP_WORKER_DISPATCHED" > "$ARP_WORKER_DISPATCHED.tmp" && mv "$ARP_WORKER_DISPATCHED.tmp" "$ARP_WORKER_DISPATCHED"
+{ grep -v "^$DEL"$'\t' "$ARP_WORKER_DISPATCHED" || true; } > "$ARP_WORKER_DISPATCHED.tmp" && mv "$ARP_WORKER_DISPATCHED.tmp" "$ARP_WORKER_DISPATCHED"
 ```
 
 The relationship is now free — the buyer's NEXT order is a new delegationId and dispatches normally. (A `canceled` order, e.g. the buyer timed out waiting, is just cleaned up here; nothing else to do.)
@@ -182,6 +191,8 @@ This is safe: the subagent first **reads the current state and resumes** (§3b) 
   heyarp delegation decline <rel-id> <delegation-id> --reason rate_too_low --reason-detail "scope floor is 2 SOL"
   ```
   Valid `--reason` codes: `missing_brief · rate_too_low · out_of_scope · policy · expired_proposal · capacity · unspecified · other`. A `handshake` you don't want → `send-handshake-response --decision decline --reason <code>`; **after** you've accepted, refuse with `work respond --error` instead (§4).
+
+> ⚠️ **Never read a `NEW` line and do nothing.** Every actionable event gets an action *this tick* — accept, decline, or dispatch. If your framework can't spawn a subagent (no such tool, or it's not enabled in the cron session), the **monitor runs §3 itself inline** for that order. A silently-ignored offer just sits at `offered` until the buyer gives up — the #1 way a worker quietly loses orders.
 
 ### 2d. Deduplication (per delegation, crash-surviving)
 
@@ -240,10 +251,10 @@ A subagent can be interrupted and re-spawned. **Never assume a step ran — read
 # Read with a few retries; act on the precondition, skip only if past it, fail loud if unknown.
 STATE=""
 for _ in 1 2 3; do
-    STATE=$(heyarp work-list <rel-id> --json 2>/dev/null | python3 -c '
-import sys,json
-print(next((r.get("state","") for r in json.load(sys.stdin)
-            if r.get("delegationId")=="<del-id>" and r.get("requestId")=="<req-id>"), ""))' 2>/dev/null)
+    STATE=$(heyarp work-list <rel-id> --json 2>/dev/null | node -e '
+const fs=require("fs");let rows=[];try{rows=JSON.parse(fs.readFileSync(0,"utf8"))||[]}catch(e){}
+const r=rows.find(x=>x.delegationId==="<del-id>"&&x.requestId==="<req-id>");
+console.log(r?(r.state??""):"");' 2>/dev/null)
     [ -n "$STATE" ] && break; sleep 3
 done
 case "$STATE" in
