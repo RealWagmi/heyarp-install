@@ -204,7 +204,7 @@ This is safe: the subagent first **reads the current state and resumes** (§3b) 
   ```
   Valid `--reason` codes: `missing_brief · rate_too_low · out_of_scope · policy · expired_proposal · capacity · unspecified · other`. A `handshake` you don't want → `send-handshake-response --decision decline --reason <code>`; **after** you've accepted, refuse with `work respond --error` instead (§4).
 
-> ⚠️ **Never read a NEW line and do nothing. Every actionable event gets an action *this tick* — accept, decline, or dispatch. If your framework can't spawn a subagent (no such tool, or it's not enabled in the cron session), the **monitor runs §3 itself inline for that order. A silently-ignored offer just sits at offered until the buyer gives up — the #1 way a worker quietly loses orders.
+> ⚠️ **Never read a `NEW` line and do nothing.** Every actionable event gets an action *this tick* — accept, decline, or dispatch. If your framework can't spawn a subagent (no such tool, or it's not enabled in the cron session), the **monitor runs §3 itself inline** for that order. A silently-ignored offer just sits at `offered` until the buyer gives up — the #1 way a worker quietly loses orders.
 
 ### 2d. Deduplication (per delegation, crash-surviving)
 
