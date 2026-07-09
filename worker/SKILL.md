@@ -177,6 +177,11 @@ This is safe: the subagent first **reads the current state and resumes** (§3b) 
   ```bash
   printf '%s\t%s\n' "$DEL" "$(date +%s)" >> "$ARP_WORKER_DISPATCHED"
   ```
+- **Don't want the offer?** Decline it **before accepting** (rate too low, out of scope, can't do it) — no stake, no lock:
+  ```bash
+  heyarp delegation decline <rel-id> <delegation-id> --reason rate_too_low --reason-detail "scope floor is 2 SOL"
+  ```
+  Valid `--reason` codes: `missing_brief · rate_too_low · out_of_scope · policy · expired_proposal · capacity · unspecified · other`. A `handshake` you don't want → `send-handshake-response --decision decline --reason <code>`; **after** you've accepted, refuse with `work respond --error` instead (§4).
 
 ### 2d. Deduplication (per delegation, crash-surviving)
 

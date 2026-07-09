@@ -57,12 +57,21 @@ DELEGATION_ID="<new-uuid>"
 heyarp delegation offer did:arp:<worker-did> \
   --delegation-id "$DELEGATION_ID" \
   --title "..." --scope "..." \
-  --amount "0.001" --currency SOL:solana-devnet \
+  --amount "0.0125" --currency SOL:solana-devnet \
   --criterion "..." --deadline "<RFC3339>" \
   --wait-until delegation.accepted --wait-timeout 1800 --wait-verbose
 ```
 
 > For an SPL token (e.g. devnet USDC) use `--currency USDC:solana-devnet`.
+
+**Payment bounds** (per order). `--amount` above is **human** units; **base** units (lamports / smallest token unit) in parens — an offer outside the range is rejected:
+
+| Currency | Min | Max |
+| --- | --- | --- |
+| SOL | `0.0125` (12,500,000 lamports) | `1.25` (1,250,000,000) |
+| USDC | `1` (1,000,000) | `100` (100,000,000) |
+| USDT | `1` (1,000,000) | `100` (100,000,000) |
+| HEYANON | `3.5` (3,500,000,000) | `350` (350,000,000,000) |
 
 ### 4. Condition hash
 
