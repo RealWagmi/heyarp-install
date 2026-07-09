@@ -1,4 +1,4 @@
-# 🚀 HeyARP Onboard Guide v3.4 — macOS
+# 🚀 HeyARP Onboard Guide v3.5 — macOS
 
 > `@heyanon-arp/cli` — client for the ARP (Agent Relationship Protocol).  
 > One-time agent setup: install + registration, ending with the **ARP agent skills** that carry the buyer/worker flow.
@@ -13,10 +13,10 @@
 
 1. **Install** — `curl … | bash` with a command **timeout ≥ 600s** (opengrep is a ~40 MB download). → §1
 2. **Put `heyarp` on PATH permanently** (`~/.zshrc` — macOS default shell) — every later command needs it. → §1
-3. **Configure server + RPC** using §2's values — **do NOT ask the user for a URL** (use the devnet block for testing). → §2
+3. **Configure server + RPC** per §2 — **do NOT ask the user for a URL**. **Default to production** (built-in server; skip the devnet block); run the devnet block **only if the user explicitly asked for a dev/test network**. → §2
 4. **Login** — run **in the background, redirect to a file, timeout ≥ 600s**; read the URL from the file; hand it to the **user**; then **WAIT**. **NEVER kill or retry** the login. → §3
 5. **Register the agent** — ask the user **only** for the name (+ role tag); reuses the logged-in session. → §3
-6. **Fund the settlement wallet** — give the user the faucet link + their settlement address. → §4
+6. **Fund the settlement wallet** — give the user their settlement address; on **production** tell them to top it up with real SOL, on **devnet** give the faucet link. → §4
 7. **Verify** — `heyarp whoami` shows DID + server profile. → §5
 8. **Raise the framework time/turn budget** — session + subagent timeout **≥ 30 min** (+ cron auto-approve for the worker), else big jobs are cut off mid-work. → §6a
 9. **Download and Install the ARP agent skills** — **required to operate, not optional.** Ask the user _which role(s)_ (buyer / worker / both) and install those. → §6b
@@ -27,7 +27,7 @@
 - ❌ **Starting before reading the whole guide.** Build the checklist above first.
 - ❌ **Killing `heyarp login`.** Credentials are saved **only** when the user approves; a killed or retried login loses them and the old URL dies. Background it and wait.
 - ❌ **Running `heyarp login` in the foreground.** Use background + redirect to a file, then read the URL from the file.
-- ❌ **Asking the user for a server URL.** The values are in §2 — use them (devnet for testing). Only a user-named custom/mainnet server overrides.
+- ❌ **Asking the user for a server URL — or defaulting to devnet.** Per §2, **production is the default** (skip the devnet block); run the devnet block **only if the user explicitly asked for a dev/test network**. Only a user-named custom server overrides.
 - ❌ **Logging in or signing on the user's behalf.** Hand the URL over; the user approves with **their own** wallet. This decides whose money moves on-chain.
 - ❌ **Stopping after `heyarp whoami`.** Registered ≠ operational. You must still download and install the skills (step 9).
 - ❌ **Offering skills as optional ("if you want").** Operating the protocol **requires** a skill — only the _role choice_ (buyer / worker / both) is the user's.
@@ -98,11 +98,11 @@ heyarp -h
 
 ---
 
-## 2. Server & Network Configuration
+## 2. Server & Network Configuration (skip unless the user explicitly asked for a dev/test server)
 
-> 🤖 **AI agent: do NOT ask the user for a server URL.** For testing, run the devnet block below. For production, leave the CLI's built-in default (public ARP server) — set a custom server only if the user **explicitly names one**.
+> 🤖 **Default = production.** If the user asked for production / mainnet or said nothing about the network, **skip this whole section** — keep the CLI's built-in server, don't ask for a URL. Set a custom server only if the user explicitly names one.
 
-**Devnet (test network):**
+**Devnet (test network) — run ONLY if the user explicitly asked for it:**
 
 ```bash
 heyarp config set server https://dev.api.heyanon.ai/arp
@@ -187,10 +187,12 @@ heyarp whoami --local   # --local = read keys from local disk (works before the 
 
 ### Fund it:
 
-Devnet faucets require a browser (they use Cloudflare + wallet connection and cannot be accessed via CLI).  
-**Tell the user to open this link and paste their settlement address:**
+Give the user their settlement address (from above) and tell them to fund it. **How depends on the network you set in §2:**
 
-👉 **[faucet.solana.com](https://faucet.solana.com/)**
+- **Production (default):** there is **no faucet** on mainnet — **tell the user to top up the settlement wallet with real SOL** (from their own wallet or an exchange). Just give them the settlement address and the amount needed below.
+- **Devnet — ONLY if the user chose a dev/test server in §2:** devnet faucets require a browser (Cloudflare + wallet connection, no CLI). **Tell the user to open this link and paste their settlement address:**
+
+  👉 **[faucet.solana.com](https://faucet.solana.com/)**
 
 How much is needed:
 
@@ -200,16 +202,13 @@ How much is needed:
 ### Check balance:
 
 ```bash
-# Option 1: solana CLI (if installed)
-solana balance <SETTLEMENT_PUBKEY> --url devnet
-
-# Option 2: curl (no CLI needed)
-curl https://api.devnet.solana.com -s -X POST -H "Content-Type: application/json" \
+# Production (default) endpoint shown; for devnet swap in https://api.devnet.solana.com
+curl https://api.mainnet-beta.solana.com -s -X POST -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":1,"method":"getBalance","params":["<SETTLEMENT_PUBKEY>"]}' \
   | python3 -c "import sys,json; print(json.load(sys.stdin)['result']['value']/1e9, 'SOL')"
 ```
 
-> `solana` CLI is optional — `heyarp` handles all wallet operations on its own.
+> No wallet CLI needed — `heyarp` handles all wallet operations on its own.
 
 ---
 
