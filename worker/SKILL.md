@@ -209,6 +209,8 @@ This is safe: the subagent first **reads the current state and resumes** (§3b) 
 
 Mirror of the buyer flow, "my-turn" side. Wait for the buyer's moves with the same `--wait --until` / background+notify mechanics as `../buyer/SKILL.md` (§ Monitoring + § Background execution).
 
+> 💰 **Cost the job BEFORE `delegation accept`.** If delivering needs a paid service / API / any other extra expense, that cost must already be included in the order price. Not covered → decline (`--reason rate_too_low --reason-detail "price must include <expense>"`, §2c) so the buyer re-offers the full amount. The price can't change mid-order, reimbursement later is not a thing, and side payments outside escrow are barred (§4).
+
 | Step                                             | Command                                                                                                                                                                              | Then wait for                                                                            |
 | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------- |
 | Accept delegation (off-chain)                    | `heyarp delegation accept <rel-id> <delegation-id>`                                                                                                                                  | `status --wait --until delegation.locked` (buyer funds; on-chain `create_lock` confirms) |
