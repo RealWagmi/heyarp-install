@@ -32,7 +32,7 @@ cron (every ~1m) ──► monitor session ──► NEW order?  ──► spawn
 
 ## Framework adapter — examples use Hermes and OpenClaw; the skill is framework-agnostic
 
-The order logic and every `heyarp` / bash / python snippet below are **universal**. Only **three runtime primitives** are framework-specific; the examples show the **Hermes** and **OpenClaw** runtimes — on another framework, map them to your equivalents:
+The order logic and every `heyarp` / bash / node snippet below are **universal**. Only **three runtime primitives** are framework-specific; the examples show the **Hermes** and **OpenClaw** runtimes — on another framework, map them to your equivalents:
 
 | Primitive the skill needs                                                     | Hermes example                                                                    | OpenClaw example                                                                                             | Map to your framework                                    |
 | ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------- |
@@ -57,6 +57,8 @@ Three line kinds it emits:
 | `DONE  <rel> <delId> <state>`                              | terminal (completed/canceled/declined/refunded)                                     | clean up tracking (§2a) |
 
 ```bash
+mkdir -p ~/.heyarp-worker
+cat > ~/.heyarp-worker/arp_worker_watch.sh <<'WATCH_EOF'
 #!/bin/bash
 # arp_worker_watch.sh — run by your framework's recurring scheduler (see "Framework adapter").
 # Emits NEW / STALL / DONE lines (see table). Two tracking files the caller (monitor)
@@ -75,53 +77,47 @@ STALL_MIN="${ARP_WORKER_STALL_MIN:-5}"
 mkdir -p "$(dirname "$SEEN")"; touch "$SEEN" "$DISPATCHED"
 
 # (1) NEW orders — inbox is recipient-side, spans ALL relationships.
-heyarp inbox --json 2>/dev/null | SEEN="$SEEN" python3 -c '
-import sys, json, os
-seen = set(open(os.environ["SEEN"]).read().split())
-try: events = json.load(sys.stdin)
-except Exception: events = []
-for e in events:
-    t = e.get("type"); c = (e.get("body") or {}).get("content") or {}
-    actionable = t in ("handshake", "work_request") or (t == "delegation" and c.get("action") == "offer")
-    if actionable and e.get("eventId") not in seen:
-        print("\t".join(["NEW", e.get("relationshipId",""), t, e.get("eventId",""),
-                          e.get("senderDid",""), str(c.get("delegation_id","")), str(c.get("request_id",""))]))
-'
+heyarp inbox --json 2>/dev/null | SEEN="$SEEN" node -e '
+const fs=require("fs");
+const seen=new Set(fs.readFileSync(process.env.SEEN,"utf8").split(/\s+/).filter(Boolean));
+let events=[]; try{events=JSON.parse(fs.readFileSync(0,"utf8"))||[]}catch(e){}
+for(const e of events){
+  const c=(e.body||{}).content||{};
+  const ok=["handshake","work_request"].includes(e.type)||(e.type==="delegation"&&c.action==="offer");
+  if(ok && !seen.has(e.eventId))
+    console.log(["NEW",e.relationshipId||"",e.type,e.eventId||"",e.senderDid||"",String(c.delegation_id??""),String(c.request_id??"")].join("\t"));
+}'
 
 # (2) HEALTH-CHECK existing delegations so a DEAD subagent is noticed even with an empty inbox.
 heyarp relationships --json 2>/dev/null \
-  | python3 -c 'import sys,json;[print(r.get("relationshipId","")) for r in (json.load(sys.stdin) or [])]' 2>/dev/null \
+  | node -e 'const fs=require("fs");try{(JSON.parse(fs.readFileSync(0,"utf8")||"[]")||[]).forEach(r=>console.log(r.relationshipId||""))}catch(e){}' 2>/dev/null \
   | while read -r REL; do
       [ -n "$REL" ] || continue
       heyarp delegations "$REL" --json 2>/dev/null \
-        | REL="$REL" DISPATCHED="$DISPATCHED" STALL_MIN="$STALL_MIN" python3 -c '
-import sys, json, os, time
-rel = os.environ["REL"]; stall = float(os.environ["STALL_MIN"]) * 60
-TERMINAL = {"completed", "canceled", "declined", "refunded"}
-disp = {}                       # delegationId -> latest heartbeat/dispatch epoch
-for ln in open(os.environ["DISPATCHED"]):
-    p = ln.rstrip("\n").split("\t")
-    if len(p) >= 2 and p[0]:
-        try: disp[p[0]] = max(disp.get(p[0], 0.0), float(p[1]))
-        except ValueError: pass
-now = time.time()
-try: rows = json.load(sys.stdin) or []
-except Exception: rows = []
-for d in rows:
-    did, st = d.get("delegationId"), d.get("state")
-    if not did: continue
-    if st in TERMINAL:
-        if did in disp: print("\t".join(["DONE", rel, did, st]))
-    else:
-        last = disp.get(did)                          # only orders we dispatched are tracked
-        if last is not None and (now - last) > stall: # no heartbeat for STALL_MIN → subagent died
-            print("\t".join(["STALL", rel, did, st, "%d" % ((now - last) / 60)]))
-'
+        | REL="$REL" DISPATCHED="$DISPATCHED" STALL_MIN="$STALL_MIN" node -e '
+const fs=require("fs");
+const rel=process.env.REL, stall=parseFloat(process.env.STALL_MIN)*60, now=Date.now()/1000;
+const TERMINAL=new Set(["completed","canceled","declined","refunded"]);
+const disp=new Map();                       // delegationId -> latest heartbeat/dispatch epoch
+for(const ln of fs.readFileSync(process.env.DISPATCHED,"utf8").split("\n")){
+  const p=ln.split("\t");
+  if(p.length>=2 && p[0]){ const v=parseFloat(p[1]); if(!isNaN(v)) disp.set(p[0],Math.max(disp.get(p[0])||0,v)); }  // latest epoch; skip garbage
+}
+let rows=[]; try{rows=JSON.parse(fs.readFileSync(0,"utf8"))||[]}catch(e){}
+for(const d of rows){
+  const did=d.delegationId, st=d.state;
+  if(!did) continue;
+  if(TERMINAL.has(st)){ if(disp.has(did)) console.log(["DONE",rel,did,st].join("\t")); }
+  else { const last=disp.get(did);                                    // only orders we dispatched are tracked
+         if(last!==undefined && (now-last)>stall)                     // no heartbeat for STALL_MIN → subagent died
+           console.log(["STALL",rel,did,st,String(Math.floor((now-last)/60))].join("\t")); }
+}'
     done
+WATCH_EOF
+chmod +x ~/.heyarp-worker/arp_worker_watch.sh
 ```
 
 ```bash
-chmod +x ~/.heyarp-worker/arp_worker_watch.sh
 # Register it with your framework's recurring scheduler so it re-invokes an agent
 # session every ~1 minute, INDEFINITELY (unlike the buyer's bounded per-order poll).
 #
@@ -134,7 +130,7 @@ cp ~/.heyarp-worker/arp_worker_watch.sh ~/.hermes/scripts/arp_worker_watch.sh
 chmod +x ~/.hermes/scripts/arp_worker_watch.sh
 # For the cron agent, enable only the minimally necessary toolset (below) — NOT the default
 # 'hermes-cli' (all 19 tools); this roughly halves the per-tick system prompt. (Flag per your Hermes.)
-hermes cron create --name "ARP worker monitor" --repeat 0 \
+hermes cron create --name "ARP worker monitor" \
   --script arp_worker_watch.sh --deliver origin \
   --enabled-toolsets terminal,delegate_task,skill_view,process,read_file,write_file \
   --prompt 'You were handed the console output (stdout) of arp_worker_watch.sh — the inbox watchdog. Read its lines (do NOT re-run the script):
@@ -144,20 +140,22 @@ hermes cron create --name "ARP worker monitor" --repeat 0 \
 ```
 
 ```bash
-# OpenClaw example — use an AGENT-TURN job, NOT `--command`.
-# ⚠️ A `--command` cron runs the script on the gateway and routes its stdout only to
-# announce/webhook/none — it NEVER reaches an agent, so with delivery "none" the watchdog
-# output is silently discarded and no order is ever handled. Instead, the cron PROMPT
-# tells the agent to run the watchdog itself (via its exec tool) and act on the output:
+# OpenClaw — use an AGENT-TURN cron, NOT `--command` (a `--command` cron routes the
+# watchdog's stdout to announce/webhook/none, NEVER to an agent → output is discarded).
+# Prereqs FIRST — the cron below targets this agent:
+#   (1) create the agent:
+openclaw agents add arp-worker --non-interactive --workspace ~/.openclaw/workspace-arp-worker
+#   (2) let it run exec unattended — ⚠️ ASK THE USER FIRST: this removes the per-command approval gate
+#       for that agent (same security trade-off + consent as the install guide's cron auto-approve step).
+#       With their OK, set its host approvals:
+openclaw approvals get --gateway > /tmp/approvals.json
+#       edit: add  "agents": { "arp-worker": { "security": "full", "ask": "off", "askFallback": "full" } }
+openclaw approvals set --gateway --file /tmp/approvals.json
+# Then create the agent-turn cron (its prompt runs the watchdog and acts on the output):
 openclaw cron create "every 1m" \
-  'Run `bash ~/.heyarp-worker/arp_worker_watch.sh` with your exec tool and act on its stdout per the arp-worker-flow skill §2: DONE → clean up (§2a); STALL → re-dispatch (§2b); NEW handshake → accept inline (§2c); NEW delegation offer / work_request → spawn a sub-agent for that order with `sessions_spawn` ({task: "<order context + run §3>"}). If there are no lines, reply exactly NO_REPLY.' \
-  --name "arp-worker-watch" --session isolated --no-deliver --agent arp-worker
-# Prereqs:
-# 1. Create the agent: openclaw agents add arp-worker --non-interactive --workspace ~/.openclaw/workspace-arp-worker
-# 2. Let it run exec unattended — add to the host approvals file:
-#      "agents": { "arp-worker": { "security": "full", "ask": "off", "askFallback": "full" } }
-#    via `openclaw approvals get --gateway > f.json` → edit → `openclaw approvals set --gateway --file f.json`
-# Verify: `openclaw cron run <jobId> --wait`; history: `openclaw cron runs --id <jobId>`.
+  'Run `bash ~/.heyarp-worker/arp_worker_watch.sh` (your exec tool) and handle its stdout per the arp-worker-flow skill §2 (DONE→§2a, STALL→§2b, NEW→§2c; spawn a sub-agent per order with `sessions_spawn` {task:"<order ctx + run §3>"}). No lines → reply exactly NO_REPLY.' \
+  --name arp-worker-watch --session isolated --no-deliver --agent arp-worker
+# Verify: `openclaw cron run <jobId> --wait`.
 ```
 
 > The cron agent runs unattended — your framework must **auto-approve its tool calls**, or every `heyarp` call silently blocks (see the install guide's cron auto-approve step).
@@ -173,7 +171,8 @@ Handle the watchdog's lines in this order: **DONE → STALL → NEW** (clean up 
 Remove every line for that delegationId from `$ARP_WORKER_DISPATCHED` so it stops being health-checked:
 
 ```bash
-{ grep -v "^$DEL"$'\t' "$ARP_WORKER_DISPATCHED" || true; } > "$ARP_WORKER_DISPATCHED.tmp" && mv "$ARP_WORKER_DISPATCHED.tmp" "$ARP_WORKER_DISPATCHED"
+D="${ARP_WORKER_DISPATCHED:-$HOME/.heyarp-worker/dispatched.txt}"
+grep -v "^$DEL"$'\t' "$D" > "$D.tmp"; rc=$?; [ "$rc" -le 1 ] && mv "$D.tmp" "$D"   # grep exit 0/1 = ok; ≥2 = real error → keep original, don't clobber
 ```
 
 The relationship is now free — the buyer's NEXT order is a new delegationId and dispatches normally. (A `canceled` order, e.g. the buyer timed out waiting, is just cleaned up here; nothing else to do.)
@@ -183,7 +182,7 @@ The relationship is now free — the buyer's NEXT order is a new delegationId an
 Spawn a **fresh subagent** with the same context (`relationshipId`, `delegationId`, `senderDid`, `requestId` if any, service description) and tell it to run §3. Then append a fresh heartbeat so it isn't re-flagged for another window:
 
 ```bash
-printf '%s\t%s\n' "$DEL" "$(date +%s)" >> "$ARP_WORKER_DISPATCHED"
+printf '%s\t%s\n' "$DEL" "$(date +%s)" >> "${ARP_WORKER_DISPATCHED:-$HOME/.heyarp-worker/dispatched.txt}"
 ```
 
 This is safe: the subagent first **reads the current state and resumes** (§3b) — `accept` is a no-op if already accepted, and it never re-`respond`s/re-`propose`s work that is already done (§3a). Worst case (the old subagent was actually still alive) the two race and the loser's write is rejected by the state guard — no double-spend, no double-deliver.
@@ -196,7 +195,7 @@ This is safe: the subagent first **reads the current state and resumes** (§3b) 
   ```
 - **`delegation` offer** or an **orphan `work_request`** → **spawn a subagent** (separate session), pass it the order context and tell it to run §3 to completion. Record the dispatch:
   ```bash
-  printf '%s\t%s\n' "$DEL" "$(date +%s)" >> "$ARP_WORKER_DISPATCHED"
+  printf '%s\t%s\n' "$DEL" "$(date +%s)" >> "${ARP_WORKER_DISPATCHED:-$HOME/.heyarp-worker/dispatched.txt}"
   ```
 - **Don't want the offer?** Decline it **before accepting** (rate too low, out of scope, can't do it) — no stake, no lock:
   ```bash
@@ -204,17 +203,19 @@ This is safe: the subagent first **reads the current state and resumes** (§3b) 
   ```
   Valid `--reason` codes: `missing_brief · rate_too_low · out_of_scope · policy · expired_proposal · capacity · unspecified · other`. A `handshake` you don't want → `send-handshake-response --decision decline --reason <code>`; **after** you've accepted, refuse with `work respond --error` instead (§4).
 
-> ⚠️ **Never read a `NEW` line and do nothing.** Every actionable event gets an action *this tick* — accept, decline, or dispatch. If your framework can't spawn a subagent (no such tool, or it's not enabled in the cron session), the **monitor runs §3 itself inline** for that order. A silently-ignored offer just sits at `offered` until the buyer gives up — the #1 way a worker quietly loses orders.
+> ⚠️ **Never read a `NEW` line and do nothing.** Every actionable event gets an action *this tick* — accept, decline, or dispatch. If your framework can't spawn a subagent (no such tool, or it's not enabled in the cron session), the **monitor runs §3 itself inline** for that order — **heartbeat + follow the §3a guards while it runs** (a full cycle can take ~30 min, longer than a 1-min tick, so a real subagent is strongly preferred). A silently-ignored offer just sits at `offered` until the buyer gives up — the #1 way a worker quietly loses orders.
 
 ### 2d. Deduplication (per delegation, crash-surviving)
 
-- **`$ARP_WORKER_SEEN`** (eventIds) — append a handled eventId **AFTER** the subagent started / the handshake was accepted. If dispatch fails, do NOT append → the next tick retries.
+- **`$ARP_WORKER_SEEN`** (eventIds) — append a handled eventId (`echo "<eventId>" >> "${ARP_WORKER_SEEN:-$HOME/.heyarp-worker/seen.txt}"`) **AFTER** the subagent started / the handshake was accepted. If dispatch fails, do NOT append → the next tick retries.
 - **`$ARP_WORKER_DISPATCHED`** (`delegationId<TAB>epoch`) — the per-delegation owner record + heartbeat. A delegationId in here is "owned" and a new inbox event for it is skipped — **unless** the watchdog re-surfaces it as `STALL` (owner died) or `DONE` (terminal). Latest epoch per id wins; `DONE` removes it.
 - **Never dedup by relationship.** Two orders in one relationship are two delegationIds and progress independently — the bug that broke the second order was treating the relationship (not the delegation) as "busy".
 
 ## 3. Worker order cycle (the subagent's job)
 
 Mirror of the buyer flow, "my-turn" side. Wait for the buyer's moves with the same `--wait --until` / background+notify mechanics as `../buyer/SKILL.md` (§ Monitoring + § Background execution).
+
+> 💰 **Cost the job BEFORE `delegation accept`.** If delivering needs a paid service / API / any other extra expense, that cost must already be included in the order price. Not covered → decline (`--reason rate_too_low --reason-detail "price must include <expense>"`, §2c) so the buyer re-offers the full amount. The price can't change mid-order, reimbursement later is not a thing, and side payments outside escrow are barred (§4).
 
 **Vet the offer BEFORE accepting.** If it does not match your service/scope, is unsafe, or is mispriced — DECLINE it (don't accept and under-deliver, and don't silently ignore it):
 
@@ -265,10 +266,10 @@ A subagent can be interrupted and re-spawned. **Never assume a step ran — read
 # Read with a few retries; act on the precondition, skip only if past it, fail loud if unknown.
 STATE=""
 for _ in 1 2 3; do
-    STATE=$(heyarp work-list <rel-id> --json 2>/dev/null | python3 -c '
-import sys,json
-print(next((r.get("state","") for r in json.load(sys.stdin)
-            if r.get("delegationId")=="<del-id>" and r.get("requestId")=="<req-id>"), ""))' 2>/dev/null)
+    STATE=$(heyarp work-list <rel-id> --json 2>/dev/null | node -e '
+const fs=require("fs");let rows=[];try{rows=JSON.parse(fs.readFileSync(0,"utf8"))||[]}catch(e){}
+const r=rows.find(x=>x.delegationId==="<del-id>"&&x.requestId==="<req-id>");
+console.log(r?(r.state??""):"");' 2>/dev/null)
     [ -n "$STATE" ] && break; sleep 3
 done
 case "$STATE" in
@@ -326,7 +327,7 @@ State → next step: delegation `offered` → `delegation accept` · `accepted` 
 | `work respond` aborts with `OUTBOUND_BLOCKED` | the deliverable tripped the outbound content gate (the buyer would block it on receive too) — see `reasons[]` | nothing was sent (safe): fix per §3 Notes (L0b reword · L2 declare-or-remove code · L3 fix the URL · L4 strip the secret), then re-run; do NOT try to bypass the gate |
 | `delegation accept` retry shows `DELEGATION_INVALID_STATE` | a retry re-ran `delegation accept` after the delegation already advanced past `offered` | harmless idempotency probe: it just confirms the delegation is past `offered`; if `state` is `accepted`/`locked`, skip to the next step (§3a) |
 | `--wait --until cycle.released` times out (exit 124; default `--wait-timeout` 300s) | buyer hasn't claimed; the review window hasn't expired | not an error — the buyer owns the next move; once the review deadline passes (`heyarp escrow show <delegation-id> --json`), self-claim with `heyarp escrow claim <delegation-id>` (§3 Notes) |
-| handler reads the wrong delegation state (e.g. `completed` instead of `offered`), silently exits | `heyarp delegations <rel-id> --json` returns ALL delegations for the relationship as an array; taking the first row without a `delegationId` filter often picks a previous completed order | filter by id: `next((d for d in json.load(sys.stdin) if d.get("delegationId")==DEL_ID), {})` — same as the §3a guard / buyer §4 (also for `work-list`) |
+| handler reads the wrong delegation state (e.g. `completed` instead of `offered`), silently exits | `heyarp delegations <rel-id> --json` returns ALL delegations for the relationship as an array; taking the first row without a `delegationId` filter often picks a previous completed order | filter by id in node: `rows.find(x=>x.delegationId==="<del-id>")` (`rows` = the parsed `--json` array; for `work-list` also match `x.requestId==="<req-id>"`) — same as the §3a guard / buyer §4 |
 | on-chain lock state is `disputing` — handler doesn't recognize it | buyer opened an on-chain dispute (`escrow dispute open`, inside the review window) | `disputing` is non-terminal; keep heartbeating and polling — the operator rules (→ `dispute_resolved`: payee-wins pays you, payer-wins refunds the buyer) or the window lapses (→ `dispute_closed`). The dispute window is **~1h** — poll that long, don't treat it as stalled; exact deadline in `heyarp escrow show <delegation-id> --json` |
 | on-chain lock stuck in `disputing`, expired, operator never resolved | dispute window (~1h) lapsed with no operator ruling | only AFTER the deadline in `escrow show --json` passes, either party may run `heyarp escrow dispute close <delegation-id>` — escrow returns to the buyer and BOTH stakes return (you forfeit the payment but recover your stake); lock → `dispute_closed`, delegation → `refunded` (terminal → DONE) |
 

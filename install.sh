@@ -76,43 +76,43 @@ fi
 
 # ---- 2. Install the CLI globally -------------------------------------------
 c_info "Installing ${CLI_PKG}${TAG} (heyarp)…"
+ORIG_PATH="$PATH"   # snapshot BEFORE any fallback PATH export — the reminder must test the *persistent* PATH
 USER_PREFIX=""
-if npm install -g "${CLI_PKG}${TAG}" >/dev/null 2>&1; then
+if err="$(npm install -g "${CLI_PKG}${TAG}" </dev/null 2>&1)"; then
 	c_ok "heyarp installed."
 else
-	# Most common failure is EACCES on the system npm prefix — retry under a
-	# user-level prefix (no sudo) and export it onto PATH for this session.
-	c_warn "Global install failed (likely no permission to the system npm dir). Retrying with a user-level prefix (~/.npm-global)…"
-	USER_PREFIX="$HOME/.npm-global"
-	npm config set prefix "$USER_PREFIX"
-	export PATH="$USER_PREFIX/bin:$PATH"
-	if ! npm install -g "${CLI_PKG}${TAG}"; then
-		c_err "npm install -g ${CLI_PKG} failed. Re-run with elevated permissions, or set a writable npm prefix."
-		exit 1
-	fi
-	c_ok "heyarp installed under $USER_PREFIX."
+	case "$err" in
+		*EACCES*|*"permission denied"*|*EROFS*)
+			# No permission to the system npm dir — retry under a user-level prefix (no sudo),
+			# session-scoped via npm_config_prefix (does NOT touch ~/.npmrc).
+			c_warn "Global install failed (no permission to the system npm dir). Retrying under a user-level prefix (~/.npm-global)…"
+			USER_PREFIX="$HOME/.npm-global"
+			export npm_config_prefix="$USER_PREFIX"
+			export PATH="$USER_PREFIX/bin:$PATH"
+			if ! npm install -g "${CLI_PKG}${TAG}" </dev/null; then
+				c_err "npm install -g ${CLI_PKG} failed under $USER_PREFIX. Re-run with a writable npm prefix."; exit 1
+			fi
+			c_ok "heyarp installed under $USER_PREFIX." ;;
+		*)
+			# Not a permissions problem (network / registry / bad HEYARP_INSTALL_TAG / …) — surface the real error, don't retry.
+			c_err "npm install -g ${CLI_PKG}${TAG} failed (not a permissions issue). npm said:"
+			printf '%s\n' "$err" >&2; exit 1 ;;
+	esac
 fi
 
 # ---- 2b. PATH (macOS) -------------------------------------------------------
-# macOS default shell is zsh, and the global npm prefix (nvm / Homebrew / a
-# custom prefix) is frequently NOT on a non-login shell's PATH. A *successful*
-# `npm install -g` then leaves `heyarp` invisible (command not found). Detect
-# that, put the bin dir on PATH for the rest of this run, and remember to tell
-# the user how to persist it (step 4). `npm bin -g` was removed in npm 9, so we
-# derive the bin dir from `npm prefix -g`. Build NPM_BIN only from a non-empty
-# prefix so it can never degenerate to the literal "/bin".
-NPM_PREFIX="$(npm prefix -g 2>/dev/null || echo '')"
-NPM_BIN=""
-PATH_HAD_BIN=1
+# macOS uses zsh by default; non-login shells may not include the global npm
+# bin directory on PATH.
+NPM_PREFIX="$(npm prefix -g 2>/dev/null || true)"
 if [ -n "$NPM_PREFIX" ]; then
-	NPM_BIN="$NPM_PREFIX/bin"
 	case ":$PATH:" in
-		*":$NPM_BIN:"*) ;;
-		*) PATH_HAD_BIN=0; export PATH="$NPM_BIN:$PATH" ;;
+		*":$NPM_PREFIX/bin:"*) ;;
+		*) export PATH="$NPM_PREFIX/bin:$PATH" ;;
 	esac
 fi
 
 # ---- 3. Install the opengrep L2 engine (explicit, sha256-verified) ---------
+OPENGREP_OK=0
 if [ "${HEYSHIELD_SKIP_OPENGREP_INSTALL:-}" = "1" ]; then
 	c_info "HEYSHIELD_SKIP_OPENGREP_INSTALL=1 — skipping the L2 engine."
 else
@@ -125,7 +125,8 @@ else
 		[ -f "$cand/scripts/install-opengrep.js" ] && SHIELD="$cand" && break
 	done
 	if [ -n "$SHIELD" ]; then
-		if node "$SHIELD/scripts/install-opengrep.js"; then
+		if node "$SHIELD/scripts/install-opengrep.js" </dev/null; then
+			OPENGREP_OK=1
 			c_ok "opengrep installed."
 		elif [ "${HEYSHIELD_REQUIRE_OPENGREP:-}" = "1" ]; then
 			c_err "opengrep install failed and HEYSHIELD_REQUIRE_OPENGREP=1."
@@ -134,19 +135,32 @@ else
 			c_warn "opengrep install did not complete. L0/L4 still work; L2 (code/script scanning) stays unavailable until you run: heyshield install-opengrep"
 		fi
 	else
+		if [ "${HEYSHIELD_REQUIRE_OPENGREP:-}" = "1" ]; then
+			c_err "Could not locate @heyanon-arp/shield to install opengrep, and HEYSHIELD_REQUIRE_OPENGREP=1."
+			exit 1
+		fi
 		c_warn "Could not locate @heyanon-arp/shield to install opengrep. Run 'heyshield install-opengrep' once heyarp is on PATH."
 	fi
 fi
 
 # ---- 4. Done ----------------------------------------------------------------
 printf '\n'
-c_ok "Installation complete. Verify with:  heyarp -h"
-if [ -n "$USER_PREFIX" ]; then
-	c_warn "Add this to your shell profile (macOS: ~/.zshrc) so 'heyarp' stays on PATH:"
-	printf '    export PATH="%s/bin:$PATH"\n' "$USER_PREFIX" >&2
-elif [ "$PATH_HAD_BIN" = 0 ]; then
-	c_warn "'heyarp' installed to a dir not on your PATH. Add to ~/.zshrc, then restart your shell:"
-	printf '    export PATH="%s:$PATH"\n' "$NPM_BIN" >&2
+# Exit stays 0 once the CLI is installed — the L2 engine is OPTIONAL (installable later). Message reflects which.
+if [ "$OPENGREP_OK" = "1" ]; then
+	c_ok "Installation complete — heyarp CLI + L2 (opengrep) engine. Verify:  heyarp -h"
+else
+	c_warn "heyarp CLI installed, but the L2 engine (opengrep) is NOT active — L0/L4 shield still work. Enable L2 later:  heyshield install-opengrep"
+	c_ok "CLI ready. Verify:  heyarp -h"
+fi
+# Print the PATH reminder unless heyarp's bin dir is on the shell's ORIGINAL PATH. The fallback branch
+# exported the dir into THIS process, but the user's NEXT shell won't have it — that's who needs the tip.
+PREFIX_DIR="${USER_PREFIX:-$NPM_PREFIX}"
+if [ -n "$PREFIX_DIR" ]; then
+	case ":$ORIG_PATH:" in
+		*":$PREFIX_DIR/bin:"*) ;;               # already on the persistent PATH — no nag
+		*) c_warn "Add this to ~/.zshrc so 'heyarp' stays on PATH:"
+		   printf '    export PATH="%s/bin:$PATH"\n' "$PREFIX_DIR" >&2 ;;
+	esac
 fi
 printf '\n'
 c_info "================================================================"
