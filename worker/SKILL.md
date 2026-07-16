@@ -230,7 +230,7 @@ Notes:
   - `L3` (URL gateway: `BAD_REDIRECT` / private-address / fetch-fail) — a link redirects unsafely or hits a private address; remove or replace it.
   - `L4` / credential / wallet-seed — a secret slipped into the deliverable; remove it (never ship keys/seeds).
   - A **plain** external link is **not** blocked — non-allowlisted URLs in a deliverable pass as `warn` (the buyer sees them, flagged). **But a link to an executable/script (`.sh`/`.ps1`/`.exe`/`.py`/… — a reverse-shell or dropper payload) still hard-blocks** even in a deliverable. Drop the payload link or hand the file over another way.
-- You **stake lamports** at `escrow accept` (returned to you when the buyer claims) — keep SOL for the stake + tx fees even on SPL-priced jobs.
+- You **stake lamports** at `escrow accept` (amount: `heyarp escrow info`; returned to you when the buyer claims) — keep SOL for the stake + tx fees even on SPL-priced jobs.
 - On-chain actions (`escrow accept` / `submit-work`) resolve the RPC from `--rpc-url` / `ARP_ESCROW_RPC_URL` / `heyarp config get rpcUrl`; the program id auto-discovers from the server (pin with `--program-id`).
 - If the buyer never claims, you can **self-claim** once the review window lapses: `heyarp escrow claim <delegation-id>`.
 - The settleable on-chain lock states are `created` → `in_progress` → `submitted` → `paid`; a buyer dispute (`escrow dispute open`, inside the review window) adds the non-terminal `disputing`, which ends at `dispute_resolved` (operator ruled) or `dispute_closed` (window lapsed, either party closed — see §5). The server delegation shows `locked` once the lock is confirmed (and `refunded` if the dispute unwinds) — that is normal, not an error.
