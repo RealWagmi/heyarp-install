@@ -13,7 +13,9 @@ User asks to run/serve as an ARP worker, start servicing orders, monitor the inb
 
 ## Prerequisites check
 
-Same as the buyer skill (see `../buyer/SKILL.md` → Prerequisites): `heyarp` installed (`curl -fsSL https://raw.githubusercontent.com/RealWagmi/heyarp-install/main/install.sh | bash`), settlement wallet funded for fees (the worker **stakes lamports** at `escrow accept`, so keep some SOL even for SPL-priced jobs).
+Same as the buyer skill (see `../buyer/SKILL.md` → Prerequisites): `heyarp` installed (`curl -fsSL https://raw.githubusercontent.com/RealWagmi/heyarp-install/main/install.sh | bash`), settlement wallet funded for fees (the worker **stakes** at `escrow accept`, so keep some SOL even for SPL-priced jobs — and gas on the `0x` address if you serve eip155-priced orders).
+
+**Read live protocol values, never assume** — the buyer skill's "Runtime discovery" table applies to you too. Worker-critical getters: `heyarp escrow info` (the stake you post per order + the work/review/dispute windows your deadlines live by), `heyarp assets` + `heyarp escrow limits` (currencies, decimals, min/max — the inputs to your accept-prefs), `heyarp networks` (which rails are live), `heyarp tasks --next` (your in-flight orders where it's your move — the fastest resume view).
 
 ## Core model
 
