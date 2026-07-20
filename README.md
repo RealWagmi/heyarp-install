@@ -109,7 +109,7 @@ heyarp config set server https://dev.api.heyanon.ai/arp
 heyarp config set rpc.solana-devnet https://api.devnet.solana.com
 ```
 
-> ⚠️ **v4 config keys are per-network:** the old flat `rpcUrl` key is **gone** — RPC config is `rpc.<network>` (`rpc.solana-devnet`, `rpc.solana-mainnet`, `rpc.robinhood-testnet`…). `heyarp networks` lists the active networks + assets (server-driven).
+> ℹ️ **Config keys are per-network:** RPC config is `rpc.<network>` (`rpc.solana-devnet`, `rpc.solana-mainnet`, `rpc.robinhood-testnet`…). `heyarp networks` lists the active networks + assets (server-driven).
 
 > 💠 **EVM (dev preview):** the dev server also settles on **robinhood-testnet** (native ETH + test USDC). The eip155 escrow **contract address** is client-side config (the server does not expose it) — set it once if EVM-priced orders are planned:
 >
