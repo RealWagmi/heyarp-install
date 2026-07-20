@@ -229,12 +229,14 @@ By the time the receipt is `proposed`, the worker has already (on-chain) accepte
 heyarp escrow claim "$DELEGATION_ID"
 ```
 
-Confirm on-chain (`escrow show` decodes the live lock):
+Confirm the release on-chain:
 
 ```bash
-heyarp escrow show "$DELEGATION_ID" --json   # EVM order: add --network <network>
-# → "state": "paid"  (plus parties, amounts, condition_hash)
+heyarp wallet verify-release --delegation-id "$DELEGATION_ID" --json   # EVM order: add --network <network>
+# → released: true, state: paid   (exits non-zero if the cycle is NOT fully paid — safe in `set -e` scripts)
 ```
+
+> For the full decoded Lock (parties, amounts, condition_hash, windows) use `heyarp escrow show "$DELEGATION_ID" --json`.
 
 > **Withholding payment is NOT a refund:** if you simply don't claim, the worker can **self-claim** after the review window lapses. To actually get money back: `heyarp escrow cancel <delegation-id>` (only _before_ the worker accepts the lock) or `heyarp escrow claim-expired <delegation-id>` (after the work window lapses with no submission — the worker's stake is forfeited to you).
 
