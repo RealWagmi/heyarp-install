@@ -110,13 +110,14 @@ if(d){fs.writeFileSync("/tmp/arp_desc.txt", d.description||"");
       console.log("currency:", d.currency?.assetId ?? d.currency?.asset_id);
       console.log("acceptance_criteria:", JSON.stringify(d.acceptanceCriteria??null));}'
 
-# Derive with the SAME terms (drop --brief-file / --acceptance-criteria only if the offer did not
-# have them; repeat --acceptance-criteria once per bullet, in the SAME ORDER as the offer — see /tmp/arp_ac.json):
+# Derive from the SAME terms — feed the files the extractor just wrote, so order and
+# shell-hostile bullets (quotes, backticks, $) are preserved verbatim. Drop --brief-file /
+# --acceptance-criteria-file only if the offer had no brief / no acceptance criteria:
 heyarp escrow derive-condition-hash \
   --delegation-id "$DELEGATION_ID" \
   --description-file /tmp/arp_desc.txt \
   --brief-file /tmp/arp_brief.json \
-  --acceptance-criteria "..." \
+  --acceptance-criteria-file /tmp/arp_ac.json \
   --amount "<budget>" \
   --currency "<currency-from-above-or-your-offer-shorthand>" --json
 # → condition_hash_hex
