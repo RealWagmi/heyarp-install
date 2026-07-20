@@ -100,19 +100,23 @@ heyarp delegation offer did:arp:<worker-did> \
 > shell variables** you passed to `delegation offer`; to be certain, extract from the delegation row:
 
 ```bash
-# Extract the server's exact terms (description + brief + canonical currency):
+# Extract the server's exact terms (description + brief + acceptance criteria + canonical currency):
 heyarp delegations <rel-id> --json 2>/dev/null | DELEGATION_ID="$DELEGATION_ID" node -e '
 const fs=require("fs");let rows=[];try{rows=JSON.parse(fs.readFileSync(0,"utf8"))||[]}catch(e){}
 const d=rows.find(x=>x.delegationId===process.env.DELEGATION_ID);
 if(d){fs.writeFileSync("/tmp/arp_desc.txt", d.description||"");
       if(d.brief)fs.writeFileSync("/tmp/arp_brief.json", JSON.stringify(d.brief));
-      console.log("currency:", d.currency?.assetId ?? d.currency?.asset_id);}'
+      if(d.acceptanceCriteria)fs.writeFileSync("/tmp/arp_ac.json", JSON.stringify(d.acceptanceCriteria));
+      console.log("currency:", d.currency?.assetId ?? d.currency?.asset_id);
+      console.log("acceptance_criteria:", JSON.stringify(d.acceptanceCriteria??null));}'
 
-# Derive with the SAME terms (add --acceptance-criteria/--brief-file only if the offer had them):
+# Derive with the SAME terms (drop --brief-file / --acceptance-criteria only if the offer did not
+# have them; repeat --acceptance-criteria once per bullet, in the SAME ORDER as the offer — see /tmp/arp_ac.json):
 heyarp escrow derive-condition-hash \
   --delegation-id "$DELEGATION_ID" \
   --description-file /tmp/arp_desc.txt \
   --brief-file /tmp/arp_brief.json \
+  --acceptance-criteria "..." \
   --amount "<budget>" \
   --currency "<currency-from-above-or-your-offer-shorthand>" --json
 # → condition_hash_hex
@@ -125,7 +129,7 @@ heyarp escrow derive-condition-hash \
 heyarp did-doc did:arp:<worker-did> --field settlementPublicKey
 
 # EVM-priced order (dev preview) — the worker's 0x address:
-heyarp did-doc did:arp:<worker-did> --field 'verificationMethod.#settlement-eip155.evmAddress'
+heyarp did-doc did:arp:<worker-did> --field settlementEvmAddress
 ```
 
 ### 6. Create escrow lock
@@ -233,7 +237,7 @@ Confirm the release on-chain:
 
 ```bash
 heyarp wallet verify-release --delegation-id "$DELEGATION_ID" --json   # EVM order: add --network <network>
-# → released: true, state: paid   (exits non-zero if the cycle is NOT fully paid — safe in `set -e` scripts)
+# → released: true, status: paid   (exits non-zero if the cycle is NOT fully paid — safe in `set -e` scripts)
 ```
 
 > For the full decoded Lock (parties, amounts, condition_hash, windows) use `heyarp escrow show "$DELEGATION_ID" --json`.
@@ -249,7 +253,7 @@ heyarp wallet verify-release --delegation-id "$DELEGATION_ID" --json   # EVM ord
 | Waiting for the primary deliverable      | `status --wait --until delegation.submitted`                                               |
 | Opened a revision round, waiting         | `status --wait --until work.responded`                                                     |
 | Waiting for the worker's receipt         | `status --wait --until receipt.proposed`                                                   |
-| Released payment (claimed), confirming   | `escrow show <delegation-id> --json` (on-chain) or `status --wait --until cycle.released`  |
+| Released payment (claimed), confirming   | `wallet verify-release --delegation-id <delegation-id> --json` (on-chain; exits non-zero until paid — EVM: add `--network`) or `status --wait --until cycle.released` |
 | Long waits (>10 min)                     | `terminal(background=true, notify_on_complete=true)`                                       |
 
 ## Background execution for long waits
@@ -375,15 +379,15 @@ heyarp escrow dispute show <delegation-id>
 # → is_payer_winner, reasoning, snapshot/reason hashes, resolve tx, settlement network
 ```
 
-Burden of proof is on you (the buyer): a delivered-but-mediocre result tends to go to the worker; a provably absent/off-scope delivery goes to you. If the dispute window (~1h — exact deadline in `heyarp escrow show <delegation-id> --json`) lapses **unresolved**, **either party** runs `heyarp escrow dispute close <delegation-id>`: escrow returns to you and **both stakes return** (lock → `dispute_closed`, delegation → `refunded`). Manual `escrow dispute resolve` is operator-key-only (and does not exist at all on EVM — the arbiter is the only resolver there).
+Burden of proof is on you (the buyer): a delivered-but-mediocre result tends to go to the worker; a provably absent/off-scope delivery goes to you. If the dispute window (duration is chain config — see `heyarp escrow info`; the exact deadline is the `expiry` field in `heyarp escrow show <delegation-id> --json`) lapses **unresolved**, **either party** runs `heyarp escrow dispute close <delegation-id>`: escrow returns to you and **both stakes return** (lock → `dispute_closed`, delegation → `refunded`). Manual `escrow dispute resolve` is operator-key-only (and does not exist at all on EVM — the arbiter is the only resolver there).
 
 ## Common pitfalls
 
 1. **`ESC_LOCK_CONDITION_HASH_MISMATCH`** — the condition_hash doesn't match.
    The hash binds **description + brief + acceptance-criteria + amount +
    currency**; retyping any of them by hand produces a different hash.
-   **Recover:** extract `description`/`brief`/`currency.assetId` from the
-   delegation row (see §4) and re-derive with the exact same values.
+   **Recover:** extract `description`/`brief`/`acceptanceCriteria`/`currency.assetId`
+   from the delegation row (see §4) and re-derive with the exact same values.
 
 2. **`fund` stuck at `PENDING_LOCK_FINALIZATION`** — the on-chain `create_lock` confirmed, but the server's indexer hasn't projected it yet (common right after a server restart, while it back-scans history). Keep polling `status --wait --until delegation.locked`; it advances once the indexer catches up.
 
