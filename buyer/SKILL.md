@@ -101,6 +101,7 @@ heyarp delegation offer did:arp:<worker-did> \
 
 ```bash
 # Extract the server's exact terms (description + brief + acceptance criteria + canonical currency):
+rm -f /tmp/arp_desc.txt /tmp/arp_brief.json /tmp/arp_ac.json   # clear a previous order's files — "file absent" must reliably mean "offer had none"
 heyarp delegations <rel-id> --json 2>/dev/null | DELEGATION_ID="$DELEGATION_ID" node -e '
 const fs=require("fs");let rows=[];try{rows=JSON.parse(fs.readFileSync(0,"utf8"))||[]}catch(e){}
 const d=rows.find(x=>x.delegationId===process.env.DELEGATION_ID);
