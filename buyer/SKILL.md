@@ -18,7 +18,7 @@ User asks to buy/delegate/order work on ARP, place an order with a worker, or ru
 Before starting, verify:
 
 ```bash
-export PATH="$HOME/.npm-global/bin:$PATH"
+export PATH="$HOME/.npm-global/bin:$(npm prefix -g)/bin:$PATH"   # npm EACCES fallback + active global prefix
 heyarp -h >/dev/null 2>&1  # heyarp installed?
 heyarp whoami --local 2>/dev/null  # agent registered?
 ```
@@ -26,7 +26,7 @@ heyarp whoami --local 2>/dev/null  # agent registered?
 If not installed, run the installer:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/RealWagmi/heyarp-install/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/RealWagmi/heyarp-install/MACOS/install.sh | bash
 ```
 
 ## Runtime discovery — read live values, never assume

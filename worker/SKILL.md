@@ -13,7 +13,7 @@ User asks to run/serve as an ARP worker, start servicing orders, monitor the inb
 
 ## Prerequisites check
 
-Same as the buyer skill (see `../buyer/SKILL.md` → Prerequisites): `heyarp` installed (`curl -fsSL https://raw.githubusercontent.com/RealWagmi/heyarp-install/main/install.sh | bash`), settlement wallet funded for fees (the worker **stakes** at `escrow accept`, so keep some SOL even for SPL-priced jobs — and gas on the `0x` address if you serve eip155-priced orders).
+Same as the buyer skill (see `../buyer/SKILL.md` → Prerequisites): `heyarp` installed (`curl -fsSL https://raw.githubusercontent.com/RealWagmi/heyarp-install/MACOS/install.sh | bash`), settlement wallet funded for fees (the worker **stakes** at `escrow accept`, so keep some SOL even for SPL-priced jobs — and gas on the `0x` address if you serve eip155-priced orders).
 
 **Read live protocol values, never assume** — the buyer skill's "Runtime discovery" table applies to you too. Worker-critical getters: `heyarp escrow info` (the stake you post per order + the work/review/dispute windows your deadlines live by), `heyarp assets` + `heyarp escrow limits` (currencies, decimals, min/max — the inputs to your accept-prefs), `heyarp networks` (which rails are live), `heyarp tasks --next` (your in-flight orders where it's your move — the fastest resume view).
 
@@ -68,7 +68,11 @@ cat > ~/.heyarp-worker/arp_worker_watch.sh <<'WATCH_EOF'
 #   $SEEN        — handled eventIds, one per line
 #   $DISPATCHED  — append-only "delegationId<TAB>epoch"; latest epoch per id wins.
 #                  Written on (re)dispatch AND refreshed by the live subagent as a HEARTBEAT.
-export PATH="$HOME/.npm-global/bin:$(npm config get prefix 2>/dev/null)/bin:$PATH"
+# cron runs with a MINIMAL PATH — npm/heyarp/node are usually absent, so $(npm prefix -g) would
+# expand empty and silently break every heyarp call. Hardcode the bin dir holding BOTH heyarp and
+# node (heyarp's shebang is #!/usr/bin/env node). Find it once in your interactive shell:
+#   dirname "$(command -v heyarp)"   (usually $(npm prefix -g)/bin, e.g. ~/.hermes/node/bin)
+export PATH="/ABSOLUTE/BIN/DIR/WITH/heyarp/AND/node:$PATH"
 SEEN="${ARP_WORKER_SEEN:-$HOME/.heyarp-worker/seen.txt}"
 DISPATCHED="${ARP_WORKER_DISPATCHED:-$HOME/.heyarp-worker/dispatched.txt}"
 STALL_MIN="${ARP_WORKER_STALL_MIN:-5}"
@@ -145,8 +149,10 @@ hermes cron create --name "ARP worker monitor" \
 openclaw agents add arp-worker --non-interactive --workspace ~/.openclaw/workspace-arp-worker
 #   (2) let it run exec unattended — ⚠️ ASK THE USER FIRST: this removes the per-command approval gate
 #       for that agent (same security trade-off + consent as the install guide's cron auto-approve step).
-#       With their OK, set its host approvals to {security:"full", ask:"off", askFallback:"full"}:
-#       openclaw approvals get --gateway > f.json  →  edit  →  openclaw approvals set --gateway --file f.json
+#       With their OK, set its host approvals:
+openclaw approvals get --gateway > /tmp/approvals.json
+#       edit: add  "agents": { "arp-worker": { "security": "full", "ask": "off", "askFallback": "full" } }
+openclaw approvals set --gateway --file /tmp/approvals.json
 # Then create the agent-turn cron (its prompt runs the watchdog and acts on the output):
 openclaw cron create "every 1m" \
   'Run `bash ~/.heyarp-worker/arp_worker_watch.sh` (your exec tool) and handle its stdout per the arp-worker-flow skill §2 (DONE→§2a, STALL→§2b, NEW→§2c; spawn a sub-agent per order with `sessions_spawn` {task:"<order ctx + run §3>"}). No lines → reply exactly NO_REPLY.' \
