@@ -202,7 +202,7 @@ if(d) console.log(JSON.stringify(d.deliverable, null, 2));'
 
 ### 9a. Revision round (only if changes are needed)
 
-If the deliverable needs changes, open a **revision round** — a `work request` in the same delegation (valid only now that a deliverable exists). The worker's `work respond` **supersedes** the primary deliverable; the receipt then binds the latest version.
+If the deliverable needs changes, open a **revision round** — a `work request` in the same delegation (valid only now that a deliverable exists). The worker's `work respond` **supersedes** the primary deliverable; the receipt then binds the latest version. That includes an `--error` response: it settles the round **as an error** (the worker's receipt must carry `--verdict rejected`, and `status`/`tasks` will show `receipt_rejected` instead of steering you to pay) — your moves are a NEW `work request` for a fix, `escrow dispute open` before the review window lapses (the worker can self-claim after it), or `escrow claim` only if you accept the outcome as-is.
 
 ```bash
 heyarp work request did:arp:<worker-did> "$DELEGATION_ID" \
