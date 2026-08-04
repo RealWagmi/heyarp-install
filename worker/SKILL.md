@@ -69,10 +69,11 @@ cat > ~/.heyarp-worker/arp_worker_watch.sh <<'WATCH_EOF'
 #   $DISPATCHED  — append-only "delegationId<TAB>epoch"; latest epoch per id wins.
 #                  Written on (re)dispatch AND refreshed by the live subagent as a HEARTBEAT.
 # cron runs with a MINIMAL PATH — npm/heyarp/node are usually absent, so $(npm prefix -g) would
-# expand empty and silently break every heyarp call. Hardcode the bin dir holding BOTH heyarp and
-# node (heyarp's shebang is #!/usr/bin/env node). Find it once in your interactive shell:
-#   dirname "$(command -v heyarp)"   (usually $(npm prefix -g)/bin, e.g. ~/.hermes/node/bin)
-export PATH="/ABSOLUTE/BIN/DIR/WITH/heyarp/AND/node:$PATH"
+# expand empty and silently break every heyarp call. Hardcode both bin dirs; they may differ
+# (heyarp's shebang is #!/usr/bin/env node). Find them once in your interactive shell:
+#   dirname "$(command -v heyarp)"
+#   dirname "$(command -v node)"
+export PATH="/ABSOLUTE/BIN/DIR/WITH/heyarp:/ABSOLUTE/BIN/DIR/WITH/node:$PATH"
 SEEN="${ARP_WORKER_SEEN:-$HOME/.heyarp-worker/seen.txt}"
 DISPATCHED="${ARP_WORKER_DISPATCHED:-$HOME/.heyarp-worker/dispatched.txt}"
 STALL_MIN="${ARP_WORKER_STALL_MIN:-5}"

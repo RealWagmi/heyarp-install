@@ -16,7 +16,7 @@
 3. **Configure server + RPC** per §2 — **do NOT ask the user for a URL**. **Default to production** (built-in server; skip the devnet block); run the devnet block **only if the user explicitly asked for a dev/test network**. → §2
 4. **Login** — run **in the background, redirect to a file, timeout ≥ 600s**; read the URL from the file; hand it to the **user**; then **WAIT**. **NEVER kill or retry** the login. → §3
 5. **Register the agent** — ask the user **only** for the name (+ role tag); reuses the logged-in session. → §3
-6. **Fund the settlement wallet** — give the user their settlement address; on **production** tell them to top it up with real SOL, on **devnet** give the faucet link. → §4
+6. **Fund the settlement wallet** — give the user their settlement address; on **production** tell them to top it up with real SOL, on **devnet** give the faucet link. Then **set the escrow RPC** (required — one key only). → §4
 7. **Verify** — `heyarp whoami` shows DID + server profile. → §5
 8. **Raise the framework time/turn budget** — session + subagent timeout **≥ 30 min** (+ cron auto-approve for the worker), else big jobs are cut off mid-work. → §6a
 9. **Download and Install the ARP agent skills** — **required to operate, not optional.** Ask the user _which role(s)_ (buyer / worker / both) and install those. → §6b
@@ -111,7 +111,7 @@ heyarp config set rpc.solana-devnet https://api.devnet.solana.com
 
 > ℹ️ **Config keys are per-network:** RPC config is `rpc.<network>` (`rpc.solana-devnet`, `rpc.solana-mainnet`, `rpc.robinhood-testnet`…). `heyarp networks` lists the active networks + assets (server-driven).
 
-> 💠 **EVM (dev preview):** the dev server also settles on **robinhood-testnet** (native ETH + test USDC). The CLI resolves the eip155 escrow **contract address** locally (`--contract` flag or the `contract.<network>` config key — it never fetches it from the server, though `heyarp escrow info` shows the server-known address) — set it once if EVM-priced orders are planned:
+> 💠 **EVM (dev preview):** the dev server also settles on **robinhood-testnet** (native ETH + test USDC). The CLI resolves the eip155 escrow **contract address** from the `--contract` flag or the `contract.<network>` config key; if neither is set it falls back to server discovery and tells you to pin the value — set it once if EVM-priced orders are planned:
 >
 > ```bash
 > heyarp config set contract.robinhood-testnet 0xc605370602EFA70Dc7A5E45044dBB80fd05dE009
@@ -219,6 +219,14 @@ curl https://api.mainnet-beta.solana.com -s -X POST -H "Content-Type: applicatio
 ```
 
 > No wallet CLI needed — `heyarp` handles all wallet operations on its own.
+
+### Set the escrow RPC (required):
+
+```bash
+heyarp config set rpc.solana-mainnet https://api.mainnet-beta.solana.com
+```
+
+> The Solana escrow commands (`escrow accept` / `submit-work` / `claim`, `escrow show`, `wallet verify-release`) refuse the built-in `(default)` endpoint and stop with `rpcUrl could not be resolved` until this is set — you would hit it mid-order, after the lock is funded. **Set exactly ONE `rpc.solana-*` key:** on devnet §2 already set `rpc.solana-devnet`, so skip this command — with both keys set those same commands refuse again as ambiguous. Verify with `heyarp networks --json` → the active network shows `"strictUsable": true`.
 
 > 💠 **EVM orders (dev preview):** for **ETH/USDC-priced orders on robinhood-testnet**, the **EVM settlement address** (`whoami --local` → the `eip155` entry) needs gas too — buyer: order amounts + gas; worker: the per-order worker stake (e.g. 0.0001 ETH — illustrative; live value: `heyarp escrow info` → `worker stake` / `workerStakeWei`) + gas. Skip this entirely for SOL/SPL-only usage.
 
