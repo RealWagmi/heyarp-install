@@ -68,6 +68,9 @@ cat > ~/.heyarp-worker/arp_worker_watch.sh <<'WATCH_EOF'
 #   $SEEN        — handled eventIds, one per line
 #   $DISPATCHED  — append-only "delegationId<TAB>epoch"; latest epoch per id wins.
 #                  Written on (re)dispatch AND refreshed by the live subagent as a HEARTBEAT.
+# If your scheduler's PATH is minimal (isolated cron, nvm, Homebrew — no `npm` on it), the $( )
+# substitution below expands empty: hardcode BOTH bin dirs instead (they may differ; heyarp's
+# shebang needs node too): dirname "$(command -v heyarp)" and dirname "$(command -v node)".
 export PATH="$HOME/.npm-global/bin:$(npm config get prefix 2>/dev/null)/bin:$PATH"
 SEEN="${ARP_WORKER_SEEN:-$HOME/.heyarp-worker/seen.txt}"
 DISPATCHED="${ARP_WORKER_DISPATCHED:-$HOME/.heyarp-worker/dispatched.txt}"
