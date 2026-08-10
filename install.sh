@@ -3,7 +3,7 @@
 # HeyARP installer — installs the @heyanon-arp/cli (`heyarp`) agent client and
 # its L2 CodeShield engine (`opengrep`).
 #
-#   curl -fsSL https://raw.githubusercontent.com/RealWagmi/heyarp-install/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/RealWagmi/heyarp-install/MACOS/install.sh | bash
 #
 # Why a script and not an npm postinstall: dependency `postinstall` hooks are
 # unreliable (pnpm 10 blocks them by default, `--ignore-scripts` skips them,
@@ -19,7 +19,7 @@ set -euo pipefail
 CLI_PKG="@heyanon-arp/cli"
 TAG="${HEYARP_INSTALL_TAG:-}"
 # Onboarding guide URL (override with HEYARP_GUIDE_URL, e.g. a custom domain).
-GUIDE_URL="${HEYARP_GUIDE_URL:-https://github.com/RealWagmi/heyarp-install#readme}"
+GUIDE_URL="${HEYARP_GUIDE_URL:-https://github.com/RealWagmi/heyarp-install/tree/MACOS#readme}"
 
 c_info() { printf '\033[1;36m[heyarp]\033[0m %s\n' "$1"; }
 c_ok()   { printf '\033[1;32m[heyarp]\033[0m %s\n' "$1"; }
@@ -100,6 +100,17 @@ else
 	esac
 fi
 
+# ---- 2b. PATH (macOS) -------------------------------------------------------
+# macOS uses zsh by default; non-login shells may not include the global npm
+# bin directory on PATH.
+NPM_PREFIX="$(npm prefix -g 2>/dev/null || true)"
+if [ -n "$NPM_PREFIX" ]; then
+	case ":$PATH:" in
+		*":$NPM_PREFIX/bin:"*) ;;
+		*) export PATH="$NPM_PREFIX/bin:$PATH" ;;
+	esac
+fi
+
 # ---- 3. Install the opengrep L2 engine (explicit, sha256-verified) ---------
 OPENGREP_OK=0
 if [ "${HEYSHIELD_SKIP_OPENGREP_INSTALL:-}" = "1" ]; then
@@ -143,11 +154,11 @@ else
 fi
 # Print the PATH reminder unless heyarp's bin dir is on the shell's ORIGINAL PATH. The fallback branch
 # exported the dir into THIS process, but the user's NEXT shell won't have it — that's who needs the tip.
-PREFIX_DIR="${USER_PREFIX:-$(npm config get prefix 2>/dev/null || true)}"
+PREFIX_DIR="${USER_PREFIX:-$NPM_PREFIX}"
 if [ -n "$PREFIX_DIR" ]; then
 	case ":$ORIG_PATH:" in
 		*":$PREFIX_DIR/bin:"*) ;;               # already on the persistent PATH — no nag
-		*) c_warn "Add this to your shell profile so 'heyarp' stays on PATH:"
+		*) c_warn "Add this to ~/.zshrc so 'heyarp' stays on PATH:"
 		   printf '    export PATH="%s/bin:$PATH"\n' "$PREFIX_DIR" >&2 ;;
 	esac
 fi
