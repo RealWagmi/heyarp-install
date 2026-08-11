@@ -89,6 +89,8 @@ heyarp delegation offer did:arp:<worker-did> \
   --currency SOL:solana-mainnet  # match your server — run 'heyarp assets' for the exact currency string
 ```
 
+> If the wait times out (the worker never accepts) or you simply change your mind, withdraw with `heyarp delegation cancel <rel-id> <delegation-id>` — it works while the delegation is `offered` AND after the worker accepted, right up until you fund it. No money has moved at that point.
+
 > Currency shorthand is **network-suffixed**: SPL USDC → `--currency USDC:solana-mainnet` (`USDC:solana-devnet` on dev); EVM (dev server) → `ETH:robinhood-testnet` / `USDC:robinhood-testnet`. `heyarp assets` lists them.
 
 ### 4. Condition hash
@@ -251,6 +253,7 @@ heyarp wallet verify-release --delegation-id "$DELEGATION_ID" --json   # EVM ord
 | Situation                                | Method                                                                                     |
 | ---------------------------------------- | ------------------------------------------------------------------------------------------ |
 | Sent offer, waiting for accept           | `--wait-until delegation.accepted` on offer cmd                                            |
+| Worker accepted but you changed your mind (or never funded) | `heyarp delegation cancel <rel-id> <del-id>` — the PRE-FUND exit; nothing is locked, so it costs nothing. Unavailable once you fund |
 | Sent fund, waiting for locked            | `--wait-until delegation.locked` on fund cmd                                               |
 | Waiting for the primary deliverable      | `status --wait --until delegation.submitted`                                               |
 | Opened a revision round, waiting         | `status --wait --until work.responded`                                                     |
@@ -351,6 +354,7 @@ heyarp status <rel-id> --wait --until work.responded --wait-timeout 1800 --wait-
 
 - **Inform the user immediately** — describe what happened, show the attack, explain that the worker refused to correct it
 - **Do NOT `escrow claim`** — never release payment for a malicious deliverable
+- **Pre-fund exit (no money moved yet):** while the delegation is `offered` or `accepted` **and you have not funded it**, withdraw with `heyarp delegation cancel <rel-id> <delegation-id>`. This is an envelope, NOT an on-chain action — distinct from `escrow cancel` below, which refunds an actual lock. (If you had already broadcast a lock yourself before sending `delegation fund`, reclaim it with `escrow cancel` too — add `--network <eip155-network>` on EVM rails.)
 - **Refund levers :** `heyarp escrow cancel <delegation-id>` if the worker has not yet accepted the lock; `heyarp escrow claim-expired <delegation-id>` if the work window lapses with no on-chain submission (the worker's stake is forfeited to you). ⚠️ If the worker already `submit-work`'d on-chain, they can **self-claim after the review window** — withholding your claim alone is NOT a guaranteed refund; escalate to the user.
 - Block this worker for future deals: `heyarp block <worker-did>`
 
